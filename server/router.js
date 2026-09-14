@@ -415,14 +415,23 @@ apiRouter.get('/netease/cookie', (req, res) => {
 
 // POST /api/netease/cookie —— 保存前先用 /login/status 验证,无效不落库
 apiRouter.post('/netease/cookie', async (req, res) => {
-  const cookie = String(req.body?.cookie || '').trim();
-  if (!cookie) return res.status(400).json({ error: 'Cookie 不能为空' });
+  const raw = String(req.body?.cookie || '').trim();
+  if (!raw) return res.status(400).json({ error: 'Cookie 不能为空' });
+  // 常见误操作:从 Cookie 列表只复制了「值」一列 —— 没有「=」的裸字符串自动补上 MUSIC_U= 前缀
+  const cookie = raw.includes('=') ? raw : `MUSIC_U=${raw}`;
+  if (!cookie.includes('MUSIC_U=')) {
+    return res.status(400).json({
+      error: '未找到 MUSIC_U=…:请在 Cookie 列表里复制 MUSIC_U 整行,或粘贴完整 Cookie 字符串',
+    });
+  }
   try {
     const status = await netease.loginStatus(cookie);
     if (!status.valid) {
-      return res
-        .status(400)
-        .json({ error: 'Cookie 无效(未登录或已过期),请重新从 music.163.com 导出 MUSIC_U=… 一段' });
+      const codeNote =
+        status.code === 200 ? '(识别为匿名会话,未登录)' : `(code ${status.code ?? '未知'})`;
+      return res.status(400).json({
+        error: `网易云返回未登录${codeNote}:请确认网页端仍处于登录态,且复制的是 MUSIC_U 的内容`,
+      });
     }
     netease.setPrefCookie(cookie);
     res.json({ ok: true, profile: status.profile });
