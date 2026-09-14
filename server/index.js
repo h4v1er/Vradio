@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'node:http';
 import { apiRouter } from './router.js';
+import { ttsRouter } from './tts.js';
 import { initWs } from './stream.js';
 
 const PORT = Number(process.env.VRADIO_PORT || 8080);
@@ -15,6 +16,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api', apiRouter);
+app.use(ttsRouter);
 
 const server = createServer(app);
 initWs(server);

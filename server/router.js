@@ -7,6 +7,7 @@ import { ask, parseClaudeOutput, getLastRaw } from './claude.js';
 import { buildPrompt } from './context.js';
 import * as netease from './adapters/netease.js';
 import * as player from './player.js';
+import * as tts from './tts.js';
 import { broadcast } from './stream.js';
 import db from './db.js';
 
@@ -189,6 +190,23 @@ async function degrade(message, why) {
   };
 }
 
+// 串词 → TTS:命中缓存直接 ready;未命中后台合成,完成经 WS 推送。
+// 未配置 FISH_API_KEY 时整体降级为纯文字串词,不报错。
+function arrangeTts(say) {
+  if (!say || !tts.isConfigured()) return null;
+  const hash = tts.ttsHash(say);
+  const url = `/tts/${hash}.mp3`;
+  if (tts.cached(hash)) {
+    broadcast('tts', { hash, url, state: 'ready' });
+    return { hash, url, state: 'ready' };
+  }
+  broadcast('tts', { hash, url, state: 'synth' });
+  tts.synthesize(say)
+    .then(() => broadcast('tts', { hash, url, state: 'ready' }))
+    .catch((err) => broadcast('tts', { hash, state: 'failed', error: err.message }));
+  return { hash, url, state: 'synth' };
+}
+
 // ── HTTP 契约 ──────────────────────────────────────────────
 
 // GET /api/now —— 当前播放 + 队列 + DJ 状态(真实状态机)
@@ -281,6 +299,9 @@ apiRouter.post('/chat', async (req, res) => {
       }
       broadcast('now-playing', state);
     }
+
+    // 串词合成语音(Fish Audio,未配置则纯文字)
+    result.tts = arrangeTts(result.say);
 
     // 统一出口:每个响应都推送 WS 聊天事件
     broadcast('chat', { role: 'assistant', say: result.say, play: result.play, degraded: result.degraded });
