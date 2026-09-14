@@ -56,7 +56,7 @@ const playable = computed(() => Boolean(nowPlaying.value && !nowPlaying.value.un
         <p class="artist">{{ nowPlaying.artist }}</p>
         <p v-if="nowPlaying.album" class="album meta-label">{{ nowPlaying.album }}</p>
         <p v-if="nowPlaying.preview" class="vip meta-label" role="status">
-          vip 试听 · 30 秒(配置 NETEASE_COOKIE 可完整播放)
+          vip 试听 · 30 秒(在设置页配置网易云 Cookie 可完整播放)
         </p>
       </template>
       <template v-else-if="nowPlaying?.unresolved">

@@ -120,12 +120,39 @@ export function buildMemory({ messages = 12, plays = 8 } = {}) {
   return { chat, played };
 }
 
+// 片段 2.5:导入的网易云歌单摘要(设置页导入,听众亲自收藏 → 品味最强信号)
+// 上限:8 个歌单 × 每单节选 15 首,控制注入体积
+const IMPORTED_MAX_LISTS = 8;
+const IMPORTED_MAX_TRACKS = 15;
+
+export function buildImportedPlaylists() {
+  try {
+    const rows = db
+      .prepare('SELECT name, tracks FROM netease_playlists ORDER BY created_at DESC LIMIT ?')
+      .all(IMPORTED_MAX_LISTS);
+    if (!rows.length) return null;
+    return rows
+      .map((r) => {
+        const tracks = JSON.parse(r.tracks);
+        const slice = tracks.slice(0, IMPORTED_MAX_TRACKS);
+        return `### 歌单「${r.name}」(${tracks.length} 首,节选 ${slice.length} 首)\n${slice
+          .map((t) => `- ${t.title} — ${t.artist}`)
+          .join('\n')}`;
+      })
+      .join('\n\n');
+  } catch {
+    return null;
+  }
+}
+
 // 六类片段组装:taste + routines + environment + history → system prompt
 export async function buildPrompt({ message, toolResults = null, trace = null }) {
   const memory = buildMemory();
+  const imported = buildImportedPlaylists();
   return [
     `<system>\n${buildSystemPrompt()}\n</system>`,
     `<用户品味语料>\n${buildCorpus()}\n</用户品味语料>`,
+    ...(imported ? [`<导入歌单>\n${imported}\n</导入歌单>`] : []),
     `<环境注入>\n${await buildEnvironment()}\n</环境注入>`,
     `<记忆>\n最近对话:\n${memory.chat}\n最近播放:\n${memory.played}\n</记忆>`,
     `<本次请求>\n听众说:${message}${toolResults ? `\n工具结果(网易云搜索):\n${JSON.stringify(toolResults, null, 2)}` : ''}\n</本次请求>`,

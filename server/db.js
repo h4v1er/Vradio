@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS player_state (
   updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
+-- 导入的网易云歌单(设置页导入,DJ 学习语料;tracks 为 toSong 结构 JSON 数组)
+CREATE TABLE IF NOT EXISTS netease_playlists (
+  playlist_id TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  tracks      TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_plays_played     ON plays(played_at);
 CREATE INDEX IF NOT EXISTS idx_plan_date        ON plan(plan_date);
