@@ -2,9 +2,11 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
 import { ask, parseClaudeOutput, getLastRaw } from './claude.js';
 import { buildPrompt } from './context.js';
 import * as netease from './adapters/netease.js';
+import * as player from './player.js';
 import { broadcast } from './stream.js';
 import db from './db.js';
 
@@ -53,15 +55,33 @@ function saveMessage(role, content) {
 
 // ── 各分支处理 ─────────────────────────────────────────────
 
-// 控制指令:直接应答(Phase 3 起真正作用于播放器)
-function handleControl(action) {
-  const says = {
-    toggle: '好的,播放状态已切换。',
-    next: '为你切到下一首。',
-    prev: '回到上一首。',
-    volume: '音量已调整。',
-  };
-  const say = says[action] || '收到。';
+// 控制指令:直接作用于播放队列状态机,并推送 now-playing
+function handleControl(action, message) {
+  let say = '收到。';
+  let state;
+  switch (action) {
+    case 'toggle':
+      state = player.toggle();
+      say = state.isPlaying ? '继续播放。' : '已暂停。';
+      break;
+    case 'next':
+      state = player.next();
+      say = state.playing
+        ? `为你切到《${state.playing.title}》——${state.playing.artist}。`
+        : '队列没有更多了。';
+      break;
+    case 'prev':
+      state = player.prev();
+      say = state.playing ? `回到《${state.playing.title}》。` : '已经是第一首了。';
+      break;
+    case 'volume': {
+      const m = message.match(/(\d{1,3})/);
+      state = player.setVolume(m ? Number(m[1]) / 100 : 0.7);
+      say = `音量已调到 ${Math.round(state.volume * 100)}%。`;
+      break;
+    }
+  }
+  broadcast('now-playing', state);
   return { type: 'control', action, say, play: [], reason: '本地控制指令', segue: '', degraded: false };
 }
 
@@ -90,6 +110,9 @@ async function handlePointsong(keyword) {
 
 // 自然语言 → Claude 决策
 async function handleClaude(message) {
+  player.setDjState('thinking');
+  broadcast('dj', { state: 'thinking' });
+
   const prompt = buildPrompt({ message });
 
   let output;
@@ -97,8 +120,12 @@ async function handleClaude(message) {
     output = parseClaudeOutput(await ask(prompt));
   } catch (err) {
     dumpClaudeRaw(err);
+    player.setDjState('idle');
+    broadcast('dj', { state: 'idle' });
     return degrade(message, err.message);
   }
+  player.setDjState('idle');
+  broadcast('dj', { state: 'idle' });
 
   const resolved = await resolvePlays(output.play);
   saveMessage('user', message);
@@ -164,14 +191,68 @@ async function degrade(message, why) {
 
 // ── HTTP 契约 ──────────────────────────────────────────────
 
-// GET /api/now —— 当前播放 + DJ 状态
-// 占位实现:Phase 3 起由播放队列与 state.db 提供真实数据
+// GET /api/now —— 当前播放 + 队列 + DJ 状态(真实状态机)
 apiRouter.get('/now', (req, res) => {
-  res.json({
-    playing: null,
-    queue: [],
-    dj: { state: 'idle' },
-  });
+  res.json(player.getState());
+});
+
+// GET /api/next —— 下一首 / 当前队列
+apiRouter.get('/next', (req, res) => {
+  const state = player.getState();
+  const next = state.index >= 0 && state.index < state.queue.length - 1
+    ? state.queue[state.index + 1]
+    : null;
+  res.json({ next, queue: state.queue, index: state.index });
+});
+
+// GET /api/plays/today —— 当日播放记录(state.db)
+apiRouter.get('/plays/today', (req, res) => {
+  const rows = db
+    .prepare("SELECT * FROM plays WHERE date(played_at) = date('now', 'localtime') ORDER BY id DESC")
+    .all();
+  res.json({ plays: rows });
+});
+
+// POST /api/queue/remove —— 从队列移除(QueuePanel 用)
+apiRouter.post('/queue/remove', (req, res) => {
+  const i = Number(req.body?.index);
+  const state = player.removeAt(Number.isInteger(i) ? i : -1);
+  broadcast('now-playing', state);
+  res.json(state);
+});
+
+// GET /api/stream/:songId —— 音频流代理:
+// 网易云直链音质回退;Range 透传 206;Referer/UA 伪装(参考旧项目 NeteaseController 实现模式)
+const UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+
+apiRouter.get('/stream/:songId', async (req, res) => {
+  try {
+    const { url } = await netease.songUrl(req.params.songId);
+    if (!url) return res.status(404).json({ error: '暂无播放资源(版权受限或需 VIP)' });
+
+    const headers = { Referer: 'https://music.163.com/', 'User-Agent': UA };
+    if (req.headers.range) headers.Range = req.headers.range;
+
+    const upstream = await fetch(url, { headers, redirect: 'follow' });
+    if (!upstream.ok && upstream.status !== 206) {
+      return res.status(upstream.status).json({ error: '上游音频获取失败' });
+    }
+
+    res.status(upstream.status);
+    const ct = upstream.headers.get('content-type');
+    if (ct) res.set('Content-Type', ct);
+    res.set('Accept-Ranges', 'bytes');
+    const cr = upstream.headers.get('content-range');
+    if (cr) res.set('Content-Range', cr);
+    const cl = upstream.headers.get('content-length');
+    if (cl) res.set('Content-Length', cl);
+
+    Readable.fromWeb(upstream.body).on('error', () => res.destroy()).pipe(res);
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: `音频流代理失败:${err.message}` });
+    else res.destroy();
+  }
 });
 
 // POST /api/chat —— 用户请求入口:分流 → 执行 → {say, play[], reason, segue}
@@ -186,9 +267,20 @@ apiRouter.post('/chat', async (req, res) => {
 
   try {
     let result;
-    if (intent.kind === 'control') result = handleControl(intent.action);
+    if (intent.kind === 'control') result = handleControl(intent.action, message);
     else if (intent.kind === 'pointsong') result = await handlePointsong(intent.keyword);
     else result = await handleClaude(message);
+
+    // 点歌直达 → 插队立即播放;DJ 编排 → 进队列、空闲时开播
+    if (result.play?.length) {
+      let state;
+      if (intent.kind === 'pointsong') state = player.playNow(result.play[0]);
+      else {
+        player.enqueue(result.play);
+        state = player.startIfIdle();
+      }
+      broadcast('now-playing', state);
+    }
 
     // 统一出口:每个响应都推送 WS 聊天事件
     broadcast('chat', { role: 'assistant', say: result.say, play: result.play, degraded: result.degraded });
