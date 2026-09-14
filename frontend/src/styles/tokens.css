@@ -1,34 +1,39 @@
-/* Vradio 设计令牌 —— 视觉交接规格 + Nothing 设计语言
+/* Vradio 设计令牌 —— 深夜私人电台视觉规格
+ * 深海军蓝/近黑全屏基底,低饱和靛蓝/紫罗兰星云氛围,
+ * 薄荷绿仅作状态色,淡紫仅作 AI 串词强调。
  * 组件内禁止硬编码颜色/圆角/间距,一律引用 --vr-* 变量 */
 :root {
-  /* 基底:深墨蓝炭黑 */
-  --vr-bg: #07090d;
-  --vr-surface: #0e1218;
-  --vr-surface-raised: #151b22;
-  --vr-panel: rgba(14, 18, 24, 0.82);
-  --vr-text: #f1f1eb;
-  --vr-text-muted: #8d96a3;
-  --vr-line: rgba(230, 239, 236, 0.14);
+  /* 基底:深海军蓝 / 近黑(全屏背景,不做大块亮色卡片) */
+  --vr-bg: #050817;
+  --vr-surface: #080b1c;
+  --vr-surface-raised: rgba(26, 32, 64, 0.6);
+  --vr-panel: rgba(10, 15, 38, 0.62); /* 半透明深蓝面板(DJ/队列/设置) */
+  --vr-text: #e8eaf6;
+  --vr-text-muted: #97a1bd;
+  --vr-line: rgba(148, 163, 210, 0.16);
+  --vr-line-strong: rgba(148, 163, 210, 0.32);
 
-  /* 状态色:荧光薄荷绿(ON AIR / 在线 / 播放) */
+  /* 状态色:薄荷绿 —— 仅用于 ON AIR / 播放 / 选中 */
   --vr-on-air: #47e7b1;
-  --vr-on-air-soft: rgba(71, 231, 177, 0.16);
+  --vr-on-air-soft: rgba(71, 231, 177, 0.14);
+  --vr-ink: #05120c; /* 薄荷绿之上的深色前景 */
 
-  /* AI 强调:淡紫(仅用于 AI/对话) */
+  /* AI 强调:低饱和紫 —— 仅用于 DJ 串词/对话 */
   --vr-ai: #9a72ff;
-  --vr-ai-soft: rgba(154, 114, 255, 0.16);
+  --vr-ai-soft: rgba(154, 114, 255, 0.14);
 
-  /* "当前播放"实体控制台:全屏唯一亮色大块 */
-  --vr-ivory: #ece9df;
-  --vr-ink: #0a0d0b;
-  --vr-ink-muted: #4d5247;
+  /* 星云氛围色(仅背景艺术层,低对比度) */
+  --vr-nebula-indigo: #2e3f86;
+  --vr-nebula-violet: #4b3d99;
+  --vr-nebula-deep: #141f4d;
+  --vr-star: #cdd6ff;
 
   --vr-danger: #ff6b6b;
 
   /* 圆角 */
   --vr-radius-s: 8px;
   --vr-radius-m: 14px;
-  --vr-radius-l: 22px;
+  --vr-radius-l: 16px;
 
   /* 间距 */
   --vr-space-1: 4px;
@@ -39,7 +44,7 @@
   --vr-space-6: 32px;
 
   /* 字体栈 */
-  --vr-font-display: 'Doto', 'Space Mono', monospace;
+  --vr-font-display: 'Doto', 'Space Mono', monospace; /* 大号时间/装饰数字 */
   --vr-font-ui: 'Space Grotesk', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
   --vr-font-mono: 'Space Mono', 'SF Mono', 'PingFang SC', monospace;
 
@@ -53,7 +58,7 @@
   --vr-text-caption: 12px;
   --vr-text-label: 11px;
 
-  /* 动效 */
+  /* 动效(仅 ease-out 系,无弹跳) */
   --vr-motion-fast: 160ms;
   --vr-motion: 200ms;
   --vr-motion-slow: 320ms;
