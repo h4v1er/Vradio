@@ -1,16 +1,23 @@
 <script setup>
-// 波形:播放时轻微响应(纯 CSS 条),reduced-motion 静止
+// 波形:发光的细线频谱,播放时按真实播放进度逐根点亮(数据驱动,非假动画),
+// 并带极轻微的呼吸摆动;reduced-motion 静止。
+import { computed } from 'vue';
 import { player } from '../../stores/player.js';
 
-const BARS = 36;
-const bars = Array.from({ length: BARS }, (_, i) => {
-  // 静态包络 + 随机微差,播放时按正弦相位轻摆
-  const env = 0.35 + 0.65 * Math.abs(Math.sin(i * 0.55 + 1.7));
+const N = 48;
+const bars = Array.from({ length: N }, (_, i) => {
+  // 静态包络:两端低、中段起伏;每根随机周期与相位
+  const env = 0.25 + 0.75 * Math.abs(Math.sin(i * 0.42 + 1.3));
   return {
-    height: Math.round(env * 100),
-    delay: (i % 8) * -0.13,
+    height: Math.round((0.3 + 0.7 * env) * 100),
+    delay: -(Math.random() * 3).toFixed(2),
+    dur: (2.4 + Math.random() * 1.6).toFixed(2),
   };
 });
+
+const lit = computed(() =>
+  player.duration ? Math.round((player.currentTime / player.duration) * N) : 0,
+);
 </script>
 
 <template>
@@ -19,7 +26,8 @@ const bars = Array.from({ length: BARS }, (_, i) => {
       v-for="(b, i) in bars"
       :key="i"
       class="bar"
-      :style="{ height: `${b.height}%`, animationDelay: `${b.delay}s` }"
+      :class="{ lit: i < lit }"
+      :style="{ height: `${b.height}%`, '--d': `${b.dur}s`, '--dl': `${b.delay}s` }"
     ></span>
   </div>
 </template>
@@ -28,28 +36,34 @@ const bars = Array.from({ length: BARS }, (_, i) => {
 .waveform {
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 40px;
+  justify-content: center;
+  gap: 4px;
+  height: 56px;
 }
 .bar {
-  flex: 1;
-  min-width: 2px;
+  width: 2px;
   border-radius: 1px;
-  background: currentColor;
-  opacity: 0.85;
+  background: rgba(94, 112, 190, 0.5); /* 未点亮:低饱和靛蓝细线 */
   transform-origin: center;
+  transition:
+    background var(--vr-motion) var(--vr-ease),
+    box-shadow var(--vr-motion) var(--vr-ease);
+}
+.bar.lit {
+  background: var(--vr-on-air);
+  box-shadow: 0 0 6px rgba(71, 231, 177, 0.32); /* 克制微光 */
 }
 .playing .bar {
-  animation: sway 1.6s var(--vr-ease) infinite alternate;
+  animation: breathe var(--d) var(--vr-ease) infinite;
+  animation-delay: var(--dl);
 }
-@keyframes sway {
-  from {
-    transform: scaleY(0.55);
-    opacity: 0.45;
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scaleY(0.72);
   }
-  to {
-    transform: scaleY(1.1);
-    opacity: 0.95;
+  50% {
+    transform: scaleY(1.18);
   }
 }
 @media (prefers-reduced-motion: reduce) {

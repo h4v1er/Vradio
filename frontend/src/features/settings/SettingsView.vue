@@ -3,6 +3,8 @@
 // 密钥本身只存在 server/.env(gitignore),此页只展示"已配置/未配置"。
 import { ref, onMounted } from 'vue';
 import { http } from '../../lib/api/http.js';
+import { player } from '../../stores/player.js';
+import { chat } from '../../stores/chat.js';
 import DevicePicker from '../player/DevicePicker.vue';
 
 const config = ref(null);
@@ -34,6 +36,55 @@ const ROWS = [
     </header>
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
+
+    <div class="panel">
+      <h2 class="meta-label">runtime / 运行状态</h2>
+      <p class="hint meta-label">开发状态面板(主视图已移除,仅设置页可见)</p>
+      <dl class="rows">
+        <div class="row">
+          <div class="info">
+            <dt>DJ 大脑</dt>
+            <dd class="meta-label">Claude 子进程编排</dd>
+          </div>
+          <div class="state">
+            <span
+              class="dot"
+              :class="player.dj.state === 'thinking' ? 'on' : 'off'"
+              aria-hidden="true"
+            ></span>
+            <span class="meta-label">{{ player.dj.state }}</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="info">
+            <dt>TTS 串词</dt>
+            <dd class="meta-label">Fish Audio 语音合成</dd>
+          </div>
+          <div class="state">
+            <span
+              class="dot"
+              :class="chat.tts?.state === 'ready' ? 'on' : 'off'"
+              aria-hidden="true"
+            ></span>
+            <span class="meta-label">{{ chat.tts ? chat.tts.state : 'off' }}</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="info">
+            <dt>WebSocket</dt>
+            <dd class="meta-label">/stream 实时事件流</dd>
+          </div>
+          <div class="state">
+            <span
+              class="dot"
+              :class="chat.ws === 'connected' ? 'on' : 'off'"
+              aria-hidden="true"
+            ></span>
+            <span class="meta-label">{{ chat.ws }}</span>
+          </div>
+        </div>
+      </dl>
+    </div>
 
     <div class="panel">
       <h2 class="meta-label">capabilities / 外部能力</h2>

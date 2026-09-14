@@ -1,6 +1,6 @@
 <script setup>
-// App 壳:顶栏 + 三视图(Player/Profile/Settings)+ 移动底部导航。
-// 桌面 12 栏:主舞台 8 + 侧栏 4(上下文/队列/最近播放);移动单栏。
+// App 壳:极简顶栏 + 居中单列舞台 + 右侧队列抽屉(默认收起)+ 移动底部导航。
+// 视觉重心永远是「当前歌曲 + 电台氛围」;系统状态面板已移入 Settings。
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { player } from './stores/player.js';
 import { chat } from './stores/chat.js';
@@ -8,7 +8,7 @@ import { ui, setView } from './stores/ui.js';
 import { http } from './lib/api/http.js';
 import AmbientField from './components/ui/AmbientField.vue';
 import OnAirIndicator from './components/ui/OnAirIndicator.vue';
-import NowPlayingCard from './features/player/NowPlayingCard.vue';
+import PlayerHero from './features/player/PlayerHero.vue';
 import DjMessage from './features/dj/DjMessage.vue';
 import MoodChips from './features/dj/MoodChips.vue';
 import RequestComposer from './features/dj/RequestComposer.vue';
@@ -17,21 +17,14 @@ import RadioContext from './features/radio-context/RadioContext.vue';
 import ProfileView from './features/profile/ProfileView.vue';
 import SettingsView from './features/settings/SettingsView.vue';
 
-// 顶栏时钟(Doto 大数字)
+// 顶栏日期(弱化展示,不放大时钟)
 const now = ref(new Date());
 let timer = null;
 onMounted(() => {
-  timer = setInterval(() => (now.value = new Date()), 1000);
+  timer = setInterval(() => (now.value = new Date()), 60_000);
 });
 onBeforeUnmount(() => clearInterval(timer));
 
-const timeStr = computed(() =>
-  new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(now.value),
-);
 const dateStr = computed(() =>
   new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
@@ -41,34 +34,33 @@ const dateStr = computed(() =>
   }).format(now.value),
 );
 
-// 顶栏环境摘要:天气 + 下一项日程
 const weather = computed(() => {
   const w = chat.env?.weather;
   if (!w?.configured || w.error) return null;
   return `${w.city || ''} ${Math.round(w.temp)}° ${w.desc || ''}`;
 });
-const nextEvent = computed(() => {
-  const cal = chat.env?.calendar;
-  if (!cal?.configured) return null;
-  const nowMs = Date.now();
-  const next = (cal.events || []).find((e) => e.start > nowMs);
-  if (!next) return '今日无日程';
-  const t = new Date(next.start).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Shanghai',
-  });
-  return `${t} ${next.summary}`;
-});
 
-// 场景标题:优先当日计划串词,否则 DJ 最新一句
-const scene = computed(
-  () =>
-    chat.plan?.say ||
-    [...chat.messages].reverse().find((m) => m.role === 'assistant')?.say ||
-    '深夜电台 · 按你的品味自动编排',
+// 队列抽屉:桌面右侧窄栏 / 移动全屏,默认收起,ESC 关闭
+const queueOpen = ref(false);
+function toggleQueue() {
+  queueOpen.value = !queueOpen.value;
+}
+function closeQueue() {
+  queueOpen.value = false;
+}
+function onKey(e) {
+  if (e.key === 'Escape') closeQueue();
+}
+onMounted(() => window.addEventListener('keydown', onKey));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
+
+// DJ 串词面板:首屏只显示最新一句(最多 5 行),展开看全部对话
+const dialogueOpen = ref(false);
+const latestSay = computed(
+  () => [...chat.messages].reverse().find((m) => m.role === 'assistant') || null,
 );
 
+// 最近播放:收进队列抽屉底部,不占主视觉
 const recentPlays = ref([]);
 onMounted(() => {
   http
@@ -77,90 +69,110 @@ onMounted(() => {
     .catch(() => {});
 });
 
-const ttsState = computed(() => chat.tts?.state ?? null);
-
-// 移动底部导航
+// 移动底部导航:Player / Queue(抽屉)/ Profile
 const NAV = [
-  { key: 'player', label: 'Player' },
-  { key: 'queue', label: 'Queue' },
-  { key: 'profile', label: 'Profile' },
+  { key: 'player', label: 'Player', action: () => setView('player') },
+  { key: 'queue', label: 'Queue', action: toggleQueue },
+  { key: 'profile', label: 'Profile', action: () => setView('profile') },
 ];
 </script>
 
 <template>
   <AmbientField />
   <div class="shell">
-    <!-- 顶栏 -->
+    <!-- 顶栏:Vradio + ON AIR + 天气/日期;其他导航弱化 -->
     <header class="topbar">
       <div class="brand">
         <button class="wordmark" aria-label="回到播放器" @click="setView('player')">VRADIO</button>
         <OnAirIndicator :status="chat.ws" />
       </div>
-      <div class="env meta-label">
-        <span>{{ weather || '天气 · 未配置' }}</span>
-        <span class="sep" aria-hidden="true">/</span>
-        <span>{{ nextEvent || '日程 · 未配置' }}</span>
+      <div class="top-right">
+        <span class="env meta-label">
+          <template v-if="weather">{{ weather }}</template>
+          <template v-else>深夜电台</template>
+          <span class="sep" aria-hidden="true">/</span>
+          <span>{{ dateStr }}</span>
+        </span>
+        <nav class="topnav meta-label" aria-label="主导航">
+          <button class="desktop-only" :class="{ on: queueOpen }" @click="toggleQueue">
+            queue<span v-if="player.queue.length" class="count">{{ player.queue.length }}</span>
+          </button>
+          <button class="desktop-only" :class="{ on: ui.view === 'profile' }" @click="setView('profile')">
+            profile
+          </button>
+          <button :class="{ on: ui.view === 'settings' }" @click="setView('settings')">settings</button>
+        </nav>
       </div>
-      <nav class="topnav meta-label" aria-label="主导航">
-        <button :class="{ on: ui.view === 'player' }" @click="setView('player')">player</button>
-        <button :class="{ on: ui.view === 'profile' }" @click="setView('profile')">profile</button>
-        <button :class="{ on: ui.view === 'settings' }" @click="setView('settings')">settings</button>
-      </nav>
     </header>
 
     <!-- 非播放器视图 -->
     <main v-if="ui.view !== 'player'" class="plain">
       <ProfileView v-if="ui.view === 'profile'" @back="setView('player')" />
-      <SettingsView v-else-if="ui.view === 'settings'" @back="setView('player')" />
-      <QueuePanel v-else-if="ui.view === 'queue'" />
+      <SettingsView v-else @back="setView('player')" />
     </main>
 
-    <!-- 播放器主视图 -->
-    <main v-else class="grid">
-      <section class="stage">
-        <div class="scene">
-          <div class="clock">
-            <span class="time">{{ timeStr }}</span>
-            <span class="date meta-label">{{ dateStr }} · CST</span>
-          </div>
-          <p class="scene-title">{{ scene }}</p>
-        </div>
-
-        <NowPlayingCard />
-
-        <section class="dj-area" aria-label="DJ 对话">
-          <div class="dj-head">
-            <h2 class="meta-label">dj 对话</h2>
-            <span class="meta-label" :class="{ thinking: player.dj.state === 'thinking' }">
-              {{ player.dj.state === 'thinking' ? 'thinking…' : 'idle' }}
-            </span>
-          </div>
-          <div class="messages" aria-live="polite">
-            <p v-if="!chat.messages.length" class="empty meta-label">
-              还没有对话 —— 问 DJ「现在适合听什么」,或者直接点歌
-            </p>
-            <DjMessage v-for="(m, i) in chat.messages" :key="i" :message="m" />
-          </div>
-          <MoodChips />
-          <RequestComposer />
-        </section>
+    <!-- 播放器主视图:居中单列 -->
+    <main v-else class="stage">
+      <section class="hero" v-reveal>
+        <PlayerHero />
       </section>
 
-      <aside class="side">
-        <section class="panel" aria-label="系统状态">
-          <h2 class="meta-label">system</h2>
-          <dl class="status">
-            <div><dt class="meta-label">dj</dt><dd>{{ player.dj.state }}</dd></div>
-            <div><dt class="meta-label">tts</dt><dd>{{ ttsState || 'off' }}</dd></div>
-            <div><dt class="meta-label">ws</dt><dd>{{ chat.ws }}</dd></div>
-          </dl>
-        </section>
+      <section class="dj-panel" v-reveal aria-label="DJ 串词">
+        <header class="dj-head">
+          <h2 class="meta-label">dj 串词</h2>
+          <span class="meta-label" :class="{ thinking: player.dj.state === 'thinking' }">
+            {{ player.dj.state === 'thinking' ? 'thinking…' : 'live' }}
+          </span>
+        </header>
 
-        <RadioContext />
+        <div v-if="latestSay || chat.plan?.say" class="latest">
+          <DjMessage v-if="latestSay" :message="latestSay" compact />
+          <DjMessage v-else :message="{ role: 'assistant', say: chat.plan.say }" compact />
+        </div>
+        <p v-else class="empty meta-label">DJ 还没说话 —— 问一句「现在适合听什么」,或者直接点歌</p>
 
+        <button
+          class="toggle-dialogue meta-label"
+          :aria-expanded="dialogueOpen"
+          @click="dialogueOpen = !dialogueOpen"
+        >
+          {{ dialogueOpen ? '收起对话 −' : `全部对话 +${chat.messages.length}` }}
+        </button>
+
+        <div v-if="dialogueOpen" class="dialogue" aria-live="polite">
+          <div class="messages">
+            <DjMessage v-for="(m, i) in chat.messages" :key="i" :message="m" />
+          </div>
+        </div>
+      </section>
+
+      <section class="interact" v-reveal aria-label="与 DJ 对话">
+        <MoodChips />
+        <RequestComposer />
+      </section>
+    </main>
+
+    <!-- 队列抽屉:默认收起,不抢主视觉 -->
+    <div class="drawer-backdrop" :class="{ open: queueOpen }" aria-hidden="true" @click="closeQueue"></div>
+    <aside
+      class="drawer"
+      :class="{ open: queueOpen }"
+      :inert="!queueOpen"
+      role="dialog"
+      aria-label="播放队列"
+    >
+      <header class="drawer-head">
+        <span class="meta-label">queue / 接下来播放</span>
+        <button class="close" aria-label="关闭队列" @click="closeQueue">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="drawer-body">
         <QueuePanel />
-
-        <section class="panel" aria-label="最近播放">
+        <RadioContext />
+        <section class="recent" aria-label="最近播放">
           <h2 class="meta-label">recent / 最近播放</h2>
           <p v-if="!recentPlays.length" class="empty meta-label">暂无记录</p>
           <ul v-else class="recent-list">
@@ -170,16 +182,16 @@ const NAV = [
             </li>
           </ul>
         </section>
-      </aside>
-    </main>
+      </div>
+    </aside>
 
-    <!-- 移动底部导航 -->
+    <!-- 移动底部导航(固定) -->
     <nav class="bottomnav" aria-label="底部导航">
       <button
         v-for="n in NAV"
         :key="n.key"
-        :class="{ on: ui.view === n.key }"
-        @click="setView(n.key)"
+        :class="{ on: n.key === 'queue' ? queueOpen : ui.view === n.key }"
+        @click="n.action"
       >
         <span class="meta-label">{{ n.label }}</span>
       </button>
@@ -191,14 +203,12 @@ const NAV = [
 .shell {
   position: relative;
   z-index: 1;
-  max-width: 1440px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 0 var(--vr-space-5);
-  display: grid;
-  gap: var(--vr-space-5);
 }
 
-/* 顶栏 */
+/* ── 顶栏:极简,细下划线 ── */
 .topbar {
   display: flex;
   align-items: center;
@@ -217,139 +227,212 @@ const NAV = [
   font-size: var(--vr-text-body);
   font-weight: 700;
   letter-spacing: 0.32em;
-}
-.env {
-  display: flex;
-  gap: var(--vr-space-2);
+  min-height: 44px;
+  display: inline-flex;
   align-items: center;
 }
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: var(--vr-space-5);
+}
+.env {
+  display: inline-flex;
+  gap: var(--vr-space-2);
+  align-items: center;
+  opacity: 0.75;
+}
 .sep {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 .topnav {
   display: flex;
   gap: var(--vr-space-4);
 }
 .topnav button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vr-space-2);
   padding: var(--vr-space-1) var(--vr-space-2);
   min-height: 44px;
   color: var(--vr-text-muted);
-  transition: color var(--vr-motion-fast) var(--vr-ease);
+  opacity: 0.75;
+  transition:
+    color var(--vr-motion-fast) var(--vr-ease),
+    opacity var(--vr-motion-fast) var(--vr-ease);
 }
 .topnav button:hover {
   color: var(--vr-text);
+  opacity: 1;
 }
 .topnav button.on {
   color: var(--vr-on-air);
+  opacity: 1;
 }
-
-/* 12 栏网格 */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: var(--vr-space-5);
-  padding-bottom: var(--vr-space-6);
-}
-.stage {
-  grid-column: span 8;
-  display: grid;
-  gap: var(--vr-space-5);
-  align-content: start;
-}
-.side {
-  grid-column: span 4;
-  display: grid;
-  gap: var(--vr-space-4);
-  align-content: start;
-}
-
-/* 时间/场景 */
-.scene {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--vr-space-4);
-  padding-top: var(--vr-space-4);
-}
-.time {
+.count {
   font-family: var(--vr-font-display);
-  font-size: var(--vr-text-display-lg);
-  line-height: 1;
-  letter-spacing: 0.02em;
-}
-.date {
-  display: block;
-  margin-top: var(--vr-space-2);
-}
-.scene-title {
-  max-width: 46ch;
-  text-align: right;
-  color: var(--vr-text-muted);
-  font-size: var(--vr-text-body-sm);
+  font-size: var(--vr-text-caption);
+  color: var(--vr-on-air);
 }
 
-/* DJ 对话区 */
-.dj-area {
+/* ── 居中单列舞台 ── */
+.stage {
+  max-width: 680px;
+  margin: 0 auto;
+  padding-bottom: var(--vr-space-6);
   display: grid;
-  gap: var(--vr-space-4);
+  gap: var(--vr-space-6);
+  align-content: start;
+}
+
+/* ── DJ 串词面板:半透明深蓝;在视口内时微光增强(.near 由 v-reveal 维护) ── */
+.dj-panel {
   background: var(--vr-panel);
   border: 1px solid var(--vr-line);
-  border-radius: var(--vr-radius-l);
-  padding: var(--vr-space-5);
+  border-radius: var(--vr-radius-m);
+  padding: var(--vr-space-4) var(--vr-space-5);
+  display: grid;
+  gap: var(--vr-space-3);
+  transition: border-color var(--vr-motion) var(--vr-ease);
+}
+.dj-panel.near {
+  border-color: var(--vr-line-strong);
 }
 .dj-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
 }
 .dj-head .thinking {
   color: var(--vr-ai);
 }
-.messages {
+.latest {
   display: grid;
-  gap: var(--vr-space-3);
-  max-height: 320px;
-  overflow-y: auto;
-  padding-right: var(--vr-space-2);
 }
 .empty {
   color: var(--vr-text-muted);
 }
-
-/* 右栏面板 */
-.panel {
-  background: var(--vr-panel);
-  border: 1px solid var(--vr-line);
-  border-radius: var(--vr-radius-m);
-  padding: var(--vr-space-4);
+.toggle-dialogue {
+  justify-self: start;
+  min-height: 44px;
+  color: var(--vr-text-muted);
+  transition: color var(--vr-motion-fast) var(--vr-ease);
+}
+.toggle-dialogue:hover {
+  color: var(--vr-on-air);
+}
+.dialogue {
   display: grid;
   gap: var(--vr-space-3);
+  border-top: 1px solid var(--vr-line);
+  padding-top: var(--vr-space-4);
 }
-.status {
+.messages {
   display: grid;
-  gap: var(--vr-space-2);
+  gap: var(--vr-space-3);
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: var(--vr-space-2);
 }
-.status > div {
+
+/* ── 对话输入区 ── */
+.interact {
+  display: grid;
+  gap: var(--vr-space-4);
+}
+
+/* ── 队列抽屉 ── */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 92vw);
+  z-index: 20;
+  background: rgba(6, 9, 24, 0.96);
+  border-left: 1px solid var(--vr-line);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  transform: translateX(105%);
+  visibility: hidden;
+  transition:
+    transform var(--vr-motion-slow) var(--vr-ease),
+    visibility 0s var(--vr-motion-slow);
+}
+.drawer.open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform var(--vr-motion-slow) var(--vr-ease);
+}
+.drawer-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: var(--vr-space-4) var(--vr-space-5);
+  border-bottom: 1px solid var(--vr-line);
+  min-height: 64px;
 }
-.status dd {
-  font-family: var(--vr-font-mono);
-  font-size: var(--vr-text-caption);
-  color: var(--vr-on-air);
+.close {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--vr-radius-s);
+  display: grid;
+  place-items: center;
+  color: var(--vr-text-muted);
+  transition:
+    color var(--vr-motion-fast) var(--vr-ease),
+    background var(--vr-motion-fast) var(--vr-ease);
+}
+.close:hover {
+  color: var(--vr-text);
+  background: var(--vr-surface-raised);
+}
+.drawer-body {
+  overflow-y: auto;
+  padding: var(--vr-space-4) var(--vr-space-5) var(--vr-space-6);
+  display: grid;
+  gap: var(--vr-space-5);
+  align-content: start;
+}
+/* 抽屉内去掉面板自身底色,避免嵌套盒子 */
+.drawer-body :deep(.queue),
+.drawer-body :deep(.ctx) {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: rgba(5, 8, 23, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--vr-motion-slow) var(--vr-ease);
+}
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── 最近播放(抽屉内) ── */
+.recent {
+  display: grid;
+  gap: var(--vr-space-2);
 }
 .recent-list {
   list-style: none;
   display: grid;
-  gap: var(--vr-space-1);
 }
 .recent-list li {
   display: flex;
-  align-items: center;
   gap: var(--vr-space-2);
-  padding: var(--vr-space-2);
-  border-radius: var(--vr-radius-s);
+  padding: var(--vr-space-2) 0;
+  border-bottom: 1px solid var(--vr-line);
   font-size: var(--vr-text-body-sm);
+}
+.recent-list li:last-child {
+  border-bottom: none;
 }
 .q-title {
   flex: 1;
@@ -361,77 +444,59 @@ const NAV = [
 .q-artist {
   color: var(--vr-text-muted);
   font-size: var(--vr-text-caption);
+  max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 40%;
 }
 
-/* 非播放器视图 */
+/* ── 非播放器视图 ── */
 .plain {
   max-width: 880px;
+  margin: 0 auto;
   padding: var(--vr-space-5) 0 var(--vr-space-6);
 }
 
-/* 底部导航(仅移动) */
+/* ── 移动端:单栏沉浸播放器 + 固定底导航 ── */
 .bottomnav {
   display: none;
 }
-
-/* 窄桌面:侧栏收为下方两栏 */
-@media (max-width: 1023px) {
-  .side {
-    grid-column: span 12;
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .stage {
-    grid-column: span 12;
-  }
-}
-
-/* 移动单栏 */
 @media (max-width: 767px) {
   .shell {
     padding: 0 var(--vr-space-4);
-    gap: var(--vr-space-4);
   }
   .env,
-  .topnav {
-    display: none;
+  .topnav .desktop-only {
+    display: none; /* 移动顶部只有品牌 + ON AIR(+ settings 弱入口) */
   }
-  .scene {
-    flex-direction: column;
-    align-items: flex-start;
+  .top-right {
+    gap: 0;
   }
-  .scene-title {
-    text-align: left;
+  .stage {
+    gap: var(--vr-space-5);
+    padding-bottom: 96px; /* 给固定底导航留位 */
   }
-  .time {
-    font-size: var(--vr-text-display-md);
-  }
-  .dj-area {
+  .dj-panel {
     padding: var(--vr-space-4);
   }
-  .messages {
-    max-height: none;
-  }
-  .side {
-    grid-template-columns: 1fr;
+  .drawer {
+    width: 100%;
   }
   .bottomnav {
-    position: sticky;
+    position: fixed;
+    left: 0;
+    right: 0;
     bottom: 0;
+    z-index: 15;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    background: var(--vr-panel);
+    background: rgba(6, 9, 24, 0.92);
     border-top: 1px solid var(--vr-line);
     backdrop-filter: blur(12px);
-    margin: 0 calc(-1 * var(--vr-space-4));
-    padding: var(--vr-space-2) var(--vr-space-4) calc(var(--vr-space-2) + env(safe-area-inset-bottom));
-    z-index: 10;
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .bottomnav button {
-    min-height: 48px;
+    min-height: 56px;
     display: grid;
     place-items: center;
     color: var(--vr-text-muted);

@@ -1,5 +1,5 @@
 <script setup>
-// 进度轨:可拖动 + 键盘(原生 range),显示已播/总时长
+// 进度轨:可拖动 + 键盘(原生 range),细线 + 薄荷微光,Doto 显示时长。
 import { computed } from 'vue';
 import { player, seek } from '../../stores/player.js';
 
@@ -28,7 +28,7 @@ function fmt(t) {
       aria-label="播放进度"
       @input="seek(Number($event.target.value))"
     />
-    <div class="times meta-label">
+    <div class="times">
       <span>{{ fmt(player.currentTime) }}</span>
       <span>{{ fmt(player.duration) }}</span>
     </div>
@@ -39,18 +39,19 @@ function fmt(t) {
 .rail {
   display: grid;
   gap: var(--vr-space-2);
+  width: 100%;
 }
 input[type='range'] {
   appearance: none;
   width: 100%;
-  height: 3px;
-  border-radius: 2px;
+  height: 2px;
+  border-radius: 1px;
   background: linear-gradient(
     to right,
-    currentColor 0%,
-    currentColor calc(var(--p, 0) * 1%),
-    color-mix(in srgb, currentColor 20%, transparent) calc(var(--p, 0) * 1%),
-    color-mix(in srgb, currentColor 20%, transparent) 100%
+    var(--vr-on-air) 0%,
+    var(--vr-on-air) calc(var(--p, 0) * 1%),
+    rgba(148, 163, 210, 0.18) calc(var(--p, 0) * 1%),
+    rgba(148, 163, 210, 0.18) 100%
   );
   cursor: pointer;
 }
@@ -59,17 +60,36 @@ input[type='range']::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: currentColor;
-  border: 3px solid var(--vr-ivory);
-  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 40%, transparent);
+  background: var(--vr-on-air);
+  box-shadow: 0 0 10px rgba(71, 231, 177, 0.55);
+  transition: transform var(--vr-motion-fast) var(--vr-ease);
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.25);
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: var(--vr-on-air);
+  box-shadow: 0 0 10px rgba(71, 231, 177, 0.55);
 }
 input[type='range']:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 .times {
   display: flex;
   justify-content: space-between;
-  color: var(--vr-ink-muted);
+}
+.times span {
+  font-family: var(--vr-font-display); /* Doto 数字 */
+  font-size: var(--vr-text-caption);
+  letter-spacing: 0.06em;
+  color: var(--vr-text-muted);
 }
 </style>

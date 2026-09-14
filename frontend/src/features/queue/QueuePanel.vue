@@ -20,7 +20,9 @@ function onDragEnd() {
 
 <template>
   <section class="queue" aria-label="接下来播放">
-    <h2 class="meta-label">queue / 接下来播放</h2>
+    <h2 class="meta-label">
+      queue / 接下来播放<span v-if="player.queue.length"> · {{ player.queue.length }}</span>
+    </h2>
 
     <p v-if="!player.queue.length" class="empty meta-label">队列为空 —— 点歌或让 DJ 编排</p>
 
@@ -113,7 +115,8 @@ function onDragEnd() {
 }
 .item.current {
   background: var(--vr-on-air-soft);
-  outline: 1px solid var(--vr-on-air);
+  border-left: 2px solid var(--vr-on-air); /* 当前曲:薄荷细线标识 */
+  padding-left: calc(var(--vr-space-1) + var(--vr-space-2));
 }
 .idx {
   min-width: 22px;
