@@ -128,6 +128,7 @@ export async function loginStatus(cookie) {
   const profile = d.profile || null;
   return {
     valid: Boolean(profile),
+    code: d.code ?? null, // 未登录时通常为 301,透传给设置页排障
     accountId: d.account?.id ?? profile?.userId ?? null,
     profile: profile ? { nickname: profile.nickname, vipType: profile.vipType } : null,
   };

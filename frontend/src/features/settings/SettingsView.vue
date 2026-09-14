@@ -264,7 +264,7 @@ async function removePlaylist(id) {
         <input
           v-model="cookieInput"
           type="password"
-          placeholder="粘贴 MUSIC_U=… 或完整 Cookie"
+          placeholder="粘贴 MUSIC_U=… 或完整 Cookie(只复制值也行,自动补前缀)"
           aria-label="网易云 Cookie"
           :disabled="cookieBusy"
         />
@@ -281,7 +281,8 @@ async function removePlaylist(id) {
         </button>
       </form>
       <p class="hint meta-label">
-        登录 music.163.com → 开发者工具 → Application → Cookies → 复制 MUSIC_U=… 一段。
+        保持 music.163.com 登录态 → 开发者工具 → Application → Cookies → music.163.com
+        → 双击 MUSIC_U 行的「值」列全选复制(不带前缀也可以,保存时会自动补上)。
         Cookie 仅保存在本机 state.db,验证通过才写入,不上传、不出网。
       </p>
 
