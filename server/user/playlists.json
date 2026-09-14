@@ -1,0 +1,31 @@
+{
+  "_readme": "示例歌单,可在 Profile 页随时编辑。每首歌给出「歌手 歌名」,DJ 点歌时通过网易云搜索解析。",
+  "favorites": {
+    "name": "常听",
+    "songs": [
+      { "title": "晴天", "artist": "周杰伦" },
+      { "title": "唯一", "artist": "告五人" }
+    ]
+  },
+  "evening": {
+    "name": "傍晚氛围",
+    "songs": [
+      { "title": "My Jinji", "artist": "落日飞车" },
+      { "title": "山海", "artist": "草东没有派对" }
+    ]
+  },
+  "focus": {
+    "name": "专注工作",
+    "songs": [
+      { "title": "Intro", "artist": "The xx" },
+      { "title": "No Surprises", "artist": "Radiohead" }
+    ]
+  },
+  "late_night": {
+    "name": "深夜",
+    "songs": [
+      { "title": "Fix You", "artist": "Coldplay" },
+      { "title": "安河桥", "artist": "宋冬野" }
+    ]
+  }
+}
