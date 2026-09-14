@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { ask, parseClaudeOutput, getLastRaw } from './claude.js';
 import { buildPrompt, getEnvSnapshot } from './context.js';
 import * as netease from './adapters/netease.js';
+import * as upnp from './adapters/upnp.js';
 import * as player from './player.js';
 import * as tts from './tts.js';
 import { todayPlan, generateDailyPlan } from './scheduler.js';
@@ -241,6 +242,64 @@ apiRouter.get('/plan/today', (req, res) => {
 apiRouter.post('/plan/generate', async (req, res) => {
   try {
     res.json(await generateDailyPlan({ reason: '手动触发' }));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── UPnP 投放(施工图 Phase 7) ────────────────────────────
+// 无设备/未选中/控制失败均返回明确错误,前端据此置灰或提示,不阻塞主线。
+
+// GET /api/upnp/devices —— SSDP 发现局域网 MediaRenderer(每次调用实时扫描)
+apiRouter.get('/upnp/devices', async (req, res) => {
+  const devices = await upnp.discover();
+  res.json({ devices, selected: upnp.getSelected() });
+});
+
+// POST /api/upnp/select —— 选择投放设备(存 prefs)
+apiRouter.post('/upnp/select', (req, res) => {
+  const dev = upnp.selectDevice(String(req.body?.location || ''));
+  if (!dev) return res.status(404).json({ error: '设备不存在,请先 GET /api/upnp/devices' });
+  broadcast('upnp', { event: 'selected', device: dev.name });
+  res.json({ selected: dev });
+});
+
+// POST /api/upnp/unselect
+apiRouter.post('/upnp/unselect', (req, res) => {
+  upnp.unselect();
+  broadcast('upnp', { event: 'unselected' });
+  res.json({ selected: null });
+});
+
+// POST /api/upnp/cast —— 把当前曲目推送到选中设备播放
+// 设备无法访问 localhost,流地址用局域网 IP 的 /api/stream 代理。
+apiRouter.post('/upnp/cast', async (req, res) => {
+  const device = upnp.getSelected();
+  if (!device) return res.status(400).json({ error: '未选择投放设备' });
+
+  const { playing } = player.getState();
+  if (!playing || playing.unresolved) {
+    return res.status(400).json({ error: '当前没有可投放的曲目' });
+  }
+
+  const url = `http://${upnp.lanIp()}:${process.env.VRADIO_PORT || 8080}/api/stream/${playing.id}`;
+  try {
+    const result = await upnp.cast(device, { url, title: `${playing.title}——${playing.artist}` });
+    broadcast('upnp', { event: 'cast', ...result });
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ error: `投放失败:${err.message}` });
+  }
+});
+
+// POST /api/upnp/control —— 控制选中设备 {action: play|pause|resume|stop|volume, volume: 0-1}
+apiRouter.post('/upnp/control', async (req, res) => {
+  const device = upnp.getSelected();
+  if (!device) return res.status(400).json({ error: '未选择投放设备' });
+  try {
+    await upnp.control(device, String(req.body?.action || ''), req.body?.volume);
+    broadcast('upnp', { event: 'control', action: req.body?.action });
+    res.json({ ok: true });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
