@@ -318,6 +318,74 @@ apiRouter.post('/queue/remove', (req, res) => {
   res.json(state);
 });
 
+// POST /api/queue/play —— 点击队列项直接播放
+apiRouter.post('/queue/play', (req, res) => {
+  const i = Number(req.body?.index);
+  const state = player.playAt(Number.isInteger(i) ? i : -1);
+  broadcast('now-playing', state);
+  res.json(state);
+});
+
+// POST /api/queue/move —— 拖拽排序 {from, to}(键鼠/键盘共用)
+apiRouter.post('/queue/move', (req, res) => {
+  const from = Number(req.body?.from);
+  const to = Number(req.body?.to);
+  const state = player.move(Number.isInteger(from) ? from : -1, Number.isInteger(to) ? to : -1);
+  broadcast('now-playing', state);
+  res.json(state);
+});
+
+// POST /api/queue/clear —— 清空队列
+apiRouter.post('/queue/clear', (req, res) => {
+  const state = player.clear();
+  broadcast('now-playing', state);
+  res.json(state);
+});
+
+// ── 用户语料文件读写(Profile 页编辑) ──────────────────────
+// 仅本地服务;文件名白名单,拒绝任意路径写入
+const USER_FILES = ['taste.md', 'routines.md', 'playlists.json', 'mood-rules.md'];
+const USER_DIR = path.join(__dirname, 'user');
+
+apiRouter.get('/user/files', (req, res) => {
+  const files = USER_FILES.map((name) => {
+    try {
+      return { name, content: fs.readFileSync(path.join(USER_DIR, name), 'utf8') };
+    } catch {
+      return { name, content: null };
+    }
+  });
+  res.json({ files });
+});
+
+apiRouter.post('/user/files', (req, res) => {
+  const name = String(req.body?.name || '');
+  if (!USER_FILES.includes(name)) {
+    return res.status(400).json({ error: `仅允许编辑:${USER_FILES.join('、')}` });
+  }
+  const content = String(req.body?.content ?? '');
+  if (content.length > 50_000) {
+    return res.status(400).json({ error: '文件过大(限 50KB)' });
+  }
+  try {
+    fs.writeFileSync(path.join(USER_DIR, name), content, 'utf8');
+    res.json({ ok: true, name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/config —— 外部能力配置状态(Settings 页用,不暴露密钥值)
+apiRouter.get('/config', (req, res) => {
+  res.json({
+    tts: tts.isConfigured(),
+    weather: Boolean(process.env.OPENWEATHER_API_KEY),
+    feishu: Boolean(process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET),
+    netease: process.env.NETEASE_BASE || 'http://localhost:3000',
+    port: Number(process.env.VRADIO_PORT || 8080),
+  });
+});
+
 // GET /api/stream/:songId —— 音频流代理:
 // 网易云直链音质回退;Range 透传 206;Referer/UA 伪装(参考旧项目 NeteaseController 实现模式)
 const UA =

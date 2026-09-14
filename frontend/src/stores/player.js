@@ -84,6 +84,17 @@ audio.addEventListener('ended', () => {
 export function togglePlay() {
   return http.post('/chat', { message: player.isPlaying ? '暂停' : '继续' });
 }
+
+// 队列操作(QueuePanel):结果经 WS now-playing 回流
+export function playQueueAt(index) {
+  return http.post('/queue/play', { index });
+}
+export function removeQueueAt(index) {
+  return http.post('/queue/remove', { index });
+}
+export function moveQueue(from, to) {
+  return http.post('/queue/move', { from, to });
+}
 export function next() {
   return http.post('/chat', { message: '下一首' });
 }
