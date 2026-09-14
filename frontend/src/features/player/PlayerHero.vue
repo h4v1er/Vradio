@@ -55,6 +55,9 @@ const playable = computed(() => Boolean(nowPlaying.value && !nowPlaying.value.un
         <h1 class="title">{{ nowPlaying.title }}</h1>
         <p class="artist">{{ nowPlaying.artist }}</p>
         <p v-if="nowPlaying.album" class="album meta-label">{{ nowPlaying.album }}</p>
+        <p v-if="nowPlaying.preview" class="vip meta-label" role="status">
+          vip 试听 · 30 秒(配置 NETEASE_COOKIE 可完整播放)
+        </p>
       </template>
       <template v-else-if="nowPlaying?.unresolved">
         <h1 class="title">未能解析</h1>
@@ -127,9 +130,9 @@ const playable = computed(() => Boolean(nowPlaying.value && !nowPlaying.value.un
 .hero {
   display: grid;
   justify-items: center;
-  gap: var(--vr-space-4);
+  gap: var(--vr-space-3);
   text-align: center;
-  padding: var(--vr-space-6) 0 var(--vr-space-5);
+  padding: var(--vr-space-5) 0 var(--vr-space-4); /* 压缩留白:1440×900 首屏要露出 DJ 串词面板 */
 }
 
 .hero-head {
@@ -164,7 +167,7 @@ const playable = computed(() => Boolean(nowPlaying.value && !nowPlaying.value.un
 /* 封面 + 辉光(背景艺术,不影响 UI 层) */
 .cover-zone {
   position: relative;
-  width: min(320px, 62vw);
+  width: min(280px, 56vw);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -216,7 +219,7 @@ const playable = computed(() => Boolean(nowPlaying.value && !nowPlaying.value.un
   justify-items: center;
 }
 .title {
-  font-size: clamp(28px, 4vw, 44px);
+  font-size: clamp(26px, 3.4vw, 40px);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.12;
@@ -230,12 +233,14 @@ const playable = computed(() => Boolean(nowPlaying.value && !nowPlaying.value.un
   color: var(--vr-text-muted);
   opacity: 0.7;
 }
+.vip {
+  color: var(--vr-on-air);
+}
 
 .controls {
   display: flex;
   align-items: center;
   gap: var(--vr-space-4);
-  margin-top: var(--vr-space-2);
 }
 .ctrl {
   width: 48px;

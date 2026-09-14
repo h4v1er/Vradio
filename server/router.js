@@ -96,11 +96,25 @@ async function handlePointsong(keyword) {
       return { type: 'chat', say: `没找到「${keyword}」,换个说法试试?`, play: [], reason: '网易云无结果', segue: '', degraded: true };
     }
     const s = songs[0];
+    // VIP 歌曲:探测是否只能拿到 30 秒试听片段,如实告知(不静默)
+    let trialNote = '';
+    if (s.vip) {
+      try {
+        const probe = await netease.songUrl(s.songId);
+        if (probe.preview) {
+          s.preview = true;
+          trialNote = '——VIP 歌曲,未登录会员只能试听 30 秒(在 server/.env 配 NETEASE_COOKIE 可完整播放)。';
+        }
+      } catch {
+        // 探测失败不阻塞点歌
+      }
+    }
+    const say = `好的,为你播放《${s.title}》——${s.artist}。${trialNote}`;
     saveMessage('user', `点歌:${keyword}`);
-    saveMessage('assistant', `好的,为你播放《${s.title}》——${s.artist}。`);
+    saveMessage('assistant', say);
     return {
       type: 'chat',
-      say: `好的,为你播放《${s.title}》——${s.artist}。`,
+      say,
       play: songs.slice(0, 1),
       reason: '点歌直达(不经过大脑)',
       segue: songs.length > 1 ? `接下来也可以听《${songs[1].title}》` : '',

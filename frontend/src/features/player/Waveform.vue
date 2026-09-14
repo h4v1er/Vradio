@@ -38,7 +38,7 @@ const lit = computed(() =>
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 56px;
+  height: 48px;
 }
 .bar {
   width: 2px;

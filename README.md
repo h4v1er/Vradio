@@ -73,6 +73,7 @@ cp server/.env.example server/.env   # 填入 FISH_API_KEY / OPENWEATHER_API_KEY
 |---|---|
 | Claude 子进程失败/超时 | 点歌类按关键词直搜网易云;其余返回"电台信号不太好",`degraded: true` |
 | 网易云容器宕机 | 点歌/DJ 编排均降级为信号提示,播放状态机不受影响,恢复后自愈 |
+| VIP/会员歌曲未登录 | 仅 30 秒试听,串词与播放器如实标注;`server/.env` 配 `NETEASE_COOKIE` 后完整播放 |
 | Fish Audio 未配置 | `tts: null`,串词纯文字展示 |
 | 天气/飞书未配置或失败 | 环境注入"未配置/暂不可用"标记,DJ 串词自然跳过 |
 | UPnP 无设备 | 设备列表为空,UI 置灰并给出重扫入口 |
