@@ -1,0 +1,61 @@
+/* Vradio 设计令牌 —— 视觉交接规格 + Nothing 设计语言
+ * 组件内禁止硬编码颜色/圆角/间距,一律引用 --vr-* 变量 */
+:root {
+  /* 基底:深墨蓝炭黑 */
+  --vr-bg: #07090d;
+  --vr-surface: #0e1218;
+  --vr-surface-raised: #151b22;
+  --vr-panel: rgba(14, 18, 24, 0.82);
+  --vr-text: #f1f1eb;
+  --vr-text-muted: #8d96a3;
+  --vr-line: rgba(230, 239, 236, 0.14);
+
+  /* 状态色:荧光薄荷绿(ON AIR / 在线 / 播放) */
+  --vr-on-air: #47e7b1;
+  --vr-on-air-soft: rgba(71, 231, 177, 0.16);
+
+  /* AI 强调:淡紫(仅用于 AI/对话) */
+  --vr-ai: #9a72ff;
+  --vr-ai-soft: rgba(154, 114, 255, 0.16);
+
+  /* "当前播放"实体控制台:全屏唯一亮色大块 */
+  --vr-ivory: #ece9df;
+  --vr-ink: #0a0d0b;
+  --vr-ink-muted: #4d5247;
+
+  --vr-danger: #ff6b6b;
+
+  /* 圆角 */
+  --vr-radius-s: 8px;
+  --vr-radius-m: 14px;
+  --vr-radius-l: 22px;
+
+  /* 间距 */
+  --vr-space-1: 4px;
+  --vr-space-2: 8px;
+  --vr-space-3: 12px;
+  --vr-space-4: 16px;
+  --vr-space-5: 24px;
+  --vr-space-6: 32px;
+
+  /* 字体栈 */
+  --vr-font-display: 'Doto', 'Space Mono', monospace;
+  --vr-font-ui: 'Space Grotesk', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --vr-font-mono: 'Space Mono', 'SF Mono', 'PingFang SC', monospace;
+
+  /* 字号(三层文字:显示信息/正文/元数据) */
+  --vr-text-display-xl: 72px;
+  --vr-text-display-lg: 48px;
+  --vr-text-display-md: 36px;
+  --vr-text-heading: 24px;
+  --vr-text-body: 16px;
+  --vr-text-body-sm: 14px;
+  --vr-text-caption: 12px;
+  --vr-text-label: 11px;
+
+  /* 动效 */
+  --vr-motion-fast: 160ms;
+  --vr-motion: 200ms;
+  --vr-motion-slow: 320ms;
+  --vr-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}

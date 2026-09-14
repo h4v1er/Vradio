@@ -1,0 +1,125 @@
+<script setup>
+// 请求输入:提交用小型行内状态,不遮挡播放器
+import { ref } from 'vue';
+import { chat, sendMessage } from '../../stores/chat.js';
+
+const text = ref('');
+
+function submit() {
+  const t = text.value;
+  if (!t.trim() || chat.sending) return;
+  text.value = '';
+  sendMessage(t);
+}
+</script>
+
+<template>
+  <div class="composer">
+    <div class="box" :class="{ sending: chat.sending }">
+      <input
+        v-model="text"
+        type="text"
+        placeholder="告诉 Vradio 你想听什么…"
+        aria-label="给 DJ 发消息"
+        :disabled="chat.sending"
+        @keydown.enter="submit"
+      />
+      <button
+        class="send"
+        :disabled="chat.sending || !text.trim()"
+        aria-label="发送"
+        @click="submit"
+      >
+        <span v-if="chat.sending" class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
+        </svg>
+      </button>
+    </div>
+    <p v-if="chat.error" class="error meta-label" role="alert">{{ chat.error }}</p>
+  </div>
+</template>
+
+<style scoped>
+.composer {
+  display: grid;
+  gap: var(--vr-space-2);
+}
+.box {
+  display: flex;
+  align-items: center;
+  gap: var(--vr-space-2);
+  border: 1px solid var(--vr-line);
+  border-radius: 999px;
+  background: var(--vr-surface);
+  padding: var(--vr-space-1) var(--vr-space-1) var(--vr-space-1) var(--vr-space-4);
+  transition: border-color var(--vr-motion-fast) var(--vr-ease);
+}
+.box:focus-within {
+  border-color: var(--vr-ai);
+}
+.box.sending {
+  border-color: var(--vr-ai-soft);
+}
+input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--vr-text);
+  font: inherit;
+  font-size: var(--vr-text-body);
+}
+input::placeholder {
+  color: var(--vr-text-muted);
+}
+.send {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--vr-ink);
+  background: var(--vr-on-air);
+  transition:
+    opacity var(--vr-motion-fast) var(--vr-ease),
+    transform var(--vr-motion-fast) var(--vr-ease);
+}
+.send:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+.send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 1s infinite;
+}
+.dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.error {
+  color: var(--vr-danger);
+}
+</style>
