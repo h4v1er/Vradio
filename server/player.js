@@ -145,6 +145,30 @@ export function removeAt(i) {
   return snapshot();
 }
 
+// 点击队列项直接播放(QueuePanel 用)
+export function playAt(i) {
+  if (i >= 0 && i < queue.length) {
+    currentIndex = i;
+    isPlaying = true;
+    recordPlay(queue[i]);
+    persist();
+  }
+  return snapshot();
+}
+
+// 拖拽排序(QueuePanel 用),currentIndex 跟随移动
+export function move(from, to) {
+  if (from >= 0 && from < queue.length && to >= 0 && to < queue.length && from !== to) {
+    const [item] = queue.splice(from, 1);
+    queue.splice(to, 0, item);
+    if (currentIndex === from) currentIndex = to;
+    else if (from < currentIndex && to >= currentIndex) currentIndex -= 1;
+    else if (from > currentIndex && to <= currentIndex) currentIndex += 1;
+    persist();
+  }
+  return snapshot();
+}
+
 export function clear() {
   queue = [];
   currentIndex = -1;
