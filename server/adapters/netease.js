@@ -29,9 +29,19 @@ export function toSong(s) {
     title: s.name,
     artist: (s.artists || []).map((a) => a.name).join(' / '),
     album: s.album?.name || '',
-    coverUrl: s.album?.picUrl || s.al?.picUrl || s.album?.artist?.img1v1Url || '',
+    // 注意:album.artist.img1v1Url 是通用占位头像,不能进回退链
+    coverUrl: s.album?.picUrl || s.al?.picUrl || '',
     durationMs: s.duration || 0,
   };
+}
+
+// 批量补齐封面:/search 对部分歌曲缺 picUrl,经 /song/detail 一次补齐
+export async function hydrateCovers(songs) {
+  const missing = songs.filter((s) => s.songId && !s.coverUrl);
+  if (!missing.length) return songs;
+  const data = await request('/song/detail', { ids: missing.map((s) => s.songId).join(',') });
+  const covers = new Map((data?.songs ?? []).map((s) => [String(s.id), s.al?.picUrl || '']));
+  return songs.map((s) => (s.coverUrl ? s : { ...s, coverUrl: covers.get(s.songId) || '' }));
 }
 
 // 搜索歌曲

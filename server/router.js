@@ -91,7 +91,7 @@ function handleControl(action, message) {
 // 点歌直达:网易云搜索,不惊动 Claude
 async function handlePointsong(keyword) {
   try {
-    const songs = await netease.search(keyword, { limit: 2 });
+    const songs = await netease.hydrateCovers(await netease.search(keyword, { limit: 2 }));
     if (!songs.length) {
       return { type: 'chat', say: `没找到「${keyword}」,换个说法试试?`, play: [], reason: '网易云无结果', segue: '', degraded: true };
     }
@@ -158,7 +158,12 @@ async function resolvePlays(entries) {
     }
     results.push({ unresolved: entry });
   }
-  return results;
+  // /search 部分歌曲缺封面,经 /song/detail 一次批量补齐
+  try {
+    return await netease.hydrateCovers(results);
+  } catch {
+    return results;
+  }
 }
 
 // 降级路径:Claude 不可用 → 点歌类按关键词直搜;其余返回可恢复错误
