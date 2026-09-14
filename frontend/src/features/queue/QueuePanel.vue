@@ -20,7 +20,9 @@ function onDragEnd() {
 
 <template>
   <section class="queue" aria-label="接下来播放">
-    <h2 class="meta-label">queue / 接下来播放</h2>
+    <h2 class="meta-label">
+      queue / 接下来播放<span v-if="player.queue.length"> · {{ player.queue.length }}</span>
+    </h2>
 
     <p v-if="!player.queue.length" class="empty meta-label">队列为空 —— 点歌或让 DJ 编排</p>
 
@@ -42,6 +44,7 @@ function onDragEnd() {
           <span class="t">
             {{ s.title || s.unresolved }}
             <span v-if="i === player.index" class="now-tag meta-label">playing</span>
+            <span v-if="s.vip" class="vip meta-label">vip</span>
           </span>
           <span class="a">{{ s.artist || (s.unresolved ? '未解析' : '') }}</span>
         </button>
@@ -113,7 +116,8 @@ function onDragEnd() {
 }
 .item.current {
   background: var(--vr-on-air-soft);
-  outline: 1px solid var(--vr-on-air);
+  border-left: 2px solid var(--vr-on-air); /* 当前曲:薄荷细线标识 */
+  padding-left: calc(var(--vr-space-1) + var(--vr-space-2));
 }
 .idx {
   min-width: 22px;
@@ -153,6 +157,13 @@ function onDragEnd() {
 }
 .now-tag {
   color: var(--vr-on-air);
+  flex-shrink: 0;
+}
+.vip {
+  color: var(--vr-text-muted);
+  border: 1px solid var(--vr-line);
+  border-radius: var(--vr-radius-s);
+  padding: 1px 6px;
   flex-shrink: 0;
 }
 .ops {

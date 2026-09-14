@@ -1,5 +1,6 @@
 <script setup>
-// 请求输入:提交用小型行内状态,不遮挡播放器
+// 请求输入:下划线式极简输入框 + 44px 薄荷发送键。
+// 提交用小型行内状态(dots),不遮挡播放器;错误就地展示。
 import { ref } from 'vue';
 import { chat, sendMessage } from '../../stores/chat.js';
 
@@ -49,10 +50,8 @@ function submit() {
   display: flex;
   align-items: center;
   gap: var(--vr-space-2);
-  border: 1px solid var(--vr-line);
-  border-radius: 999px;
-  background: var(--vr-surface);
-  padding: var(--vr-space-1) var(--vr-space-1) var(--vr-space-1) var(--vr-space-4);
+  border-bottom: 1px solid var(--vr-line-strong); /* 下划线式,无盒子 */
+  padding: var(--vr-space-2) 0;
   transition: border-color var(--vr-motion-fast) var(--vr-ease);
 }
 .box:focus-within {
@@ -70,13 +69,14 @@ input {
   color: var(--vr-text);
   font: inherit;
   font-size: var(--vr-text-body);
+  padding: var(--vr-space-2) 0;
 }
 input::placeholder {
   color: var(--vr-text-muted);
 }
 .send {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -84,10 +84,15 @@ input::placeholder {
   background: var(--vr-on-air);
   transition:
     opacity var(--vr-motion-fast) var(--vr-ease),
-    transform var(--vr-motion-fast) var(--vr-ease);
+    transform var(--vr-motion-fast) var(--vr-ease),
+    box-shadow var(--vr-motion-fast) var(--vr-ease);
 }
 .send:hover:not(:disabled) {
-  transform: scale(1.05);
+  transform: scale(1.04);
+  box-shadow: 0 0 20px var(--vr-on-air-soft);
+}
+.send:active:not(:disabled) {
+  transform: scale(0.96);
 }
 .send:disabled {
   opacity: 0.35;

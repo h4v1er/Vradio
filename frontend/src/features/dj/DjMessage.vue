@@ -1,9 +1,12 @@
 <script setup>
-// DJ 消息:AI 消息淡紫边线区分;播放列表条目可点击进队列(Phase 9 接队列交互)
+// DJ 消息:半透明深蓝面板 + 很细的紫色左边线标明 AI 串词。
+// compact 模式(主视图面板)正文最多 5 行,展开后完整展示。
+// 播放列表条目点击 → 真实点歌请求。
 import { sendMessage } from '../../stores/chat.js';
 
 defineProps({
   message: { type: Object, required: true }, // {role, say, play[], degraded, ts}
+  compact: { type: Boolean, default: false },
 });
 
 function playSong(entry) {
@@ -14,8 +17,8 @@ function playSong(entry) {
 
 <template>
   <div class="msg" :class="message.role">
-    <div class="bubble">
-      <p class="say">{{ message.say }}</p>
+    <div class="bubble" :class="{ compact }">
+      <p class="say" :class="{ clamped: compact }">{{ message.say }}</p>
 
       <ul v-if="message.play?.length" class="plays" aria-label="播放列表">
         <li v-for="(s, i) in message.play" :key="i">
@@ -48,20 +51,22 @@ function playSong(entry) {
 .msg.user {
   justify-content: flex-end;
 }
-.msg.user .bubble {
-  border-color: var(--vr-line);
-  border-left-color: var(--vr-text-muted);
-}
 .bubble {
-  max-width: 78%;
-  border: 1px solid var(--vr-line);
-  border-left: 2px solid var(--vr-ai);
+  max-width: 100%;
+  background: var(--vr-panel); /* 半透明深蓝 */
+  border-left: 2px solid var(--vr-ai); /* 细紫左边线 = AI 串词 */
   border-radius: var(--vr-radius-m);
   padding: var(--vr-space-3) var(--vr-space-4);
-  background: var(--vr-surface);
   display: grid;
   gap: var(--vr-space-3);
   animation: rise var(--vr-motion) var(--vr-ease);
+}
+.msg.user .bubble {
+  border-left-color: var(--vr-line-strong);
+  background: rgba(10, 15, 38, 0.35);
+}
+.msg.user .say {
+  color: var(--vr-text-muted);
 }
 @keyframes rise {
   from {
@@ -73,20 +78,37 @@ function playSong(entry) {
   font-size: var(--vr-text-body);
   line-height: 1.6;
 }
+/* 嵌在 DJ 串词面板里:去掉自身底色,只留细紫左边线 */
+.bubble.compact {
+  background: transparent;
+  padding: 0;
+  padding-left: var(--vr-space-3);
+  border-radius: 0;
+  animation: none;
+}
+.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .plays {
   list-style: none;
   display: grid;
-  gap: var(--vr-space-1);
 }
 .play-item {
   width: 100%;
   display: flex;
   align-items: center;
   gap: var(--vr-space-3);
-  padding: var(--vr-space-2) var(--vr-space-3);
-  border-radius: var(--vr-radius-s);
+  padding: var(--vr-space-3) var(--vr-space-2);
+  min-height: 44px;
   text-align: left;
+  border-top: 1px solid var(--vr-line);
   transition: background var(--vr-motion-fast) var(--vr-ease);
+}
+.play-item:first-child {
+  border-top: none;
 }
 .play-item:hover:not(:disabled) {
   background: var(--vr-surface-raised);
