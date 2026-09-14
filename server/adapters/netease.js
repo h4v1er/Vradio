@@ -1,15 +1,46 @@
 // 网易云适配器:NeteaseCloudMusicApi 的调用、超时与错误封装
-// search / song_url(音质回退)/ lyric / recommend
+// search / song_url(音质回退)/ lyric / recommend / 登录态与歌单
+import db from '../db.js';
+
 const BASE = process.env.NETEASE_BASE || 'http://localhost:3000';
 const TIMEOUT_MS = 5000;
 
-// cookie 策略:
-// 1. NETEASE_COOKIE(用户登录 music.163.com 导出的 MUSIC_U cookie)优先 —— VIP 歌曲可完整播放;
-// 2. 否则懒加载一次匿名注册 cookie —— 提升非会员歌曲的完整度与音质;
-// 3. 都没有则裸请求(VIP 歌曲只返回 30 秒试听片段,由 songUrl 以 preview 标记)。
+// cookie 策略(优先级从高到低):
+// 1. NETEASE_COOKIE 环境变量(server/.env);
+// 2. prefs 表 netease_cookie(设置页保存并验证,仅存本机 state.db,不上传);
+// 3. 懒加载一次匿名注册 cookie —— 提升非会员歌曲的完整度与音质;
+// 4. 都没有则裸请求(VIP 歌曲只返回 30 秒试听片段,由 songUrl 以 preview 标记)。
 let anonCookie = null;
+
+function getPrefCookie() {
+  try {
+    return db.prepare('SELECT value FROM prefs WHERE key = ?').get('netease_cookie')?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPrefCookie(cookie) {
+  db.prepare(
+    'INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  ).run('netease_cookie', cookie);
+}
+
+export function clearPrefCookie() {
+  db.prepare('DELETE FROM prefs WHERE key = ?').run('netease_cookie');
+}
+
+// 当前 cookie 来源:env / prefs / anonymous(设置页状态展示用,不回 cookie 值)
+export function cookieSource() {
+  if (process.env.NETEASE_COOKIE) return 'env';
+  if (getPrefCookie()) return 'prefs';
+  return 'anonymous';
+}
+
 async function ensureCookie() {
   if (process.env.NETEASE_COOKIE) return process.env.NETEASE_COOKIE;
+  const pref = getPrefCookie();
+  if (pref) return pref;
   if (anonCookie) return anonCookie;
   try {
     const data = await request('/register/anonimous');
@@ -38,18 +69,18 @@ async function request(pathname, params) {
 }
 
 // 网易云歌曲 → Vradio 统一歌曲结构(供队列、前端、播放记录共用)
-// 封面回退链:album.picUrl → al.picUrl(旧字段)→ 歌手头像
+// 字段回退链:/search 用 artists/duration,/playlist/track/all 用 ar/dt,
+// 旧接口用 al(封面)。注意:album.artist.img1v1Url 是通用占位头像,不能进回退链。
 // vip:fee=1(会员)/ 4(付费专辑)—— 未登录时仅 30 秒试听,前端据此提示
 export function toSong(s) {
   return {
     source: 'netease',
     songId: String(s.id),
     title: s.name,
-    artist: (s.artists || []).map((a) => a.name).join(' / '),
-    album: s.album?.name || '',
-    // 注意:album.artist.img1v1Url 是通用占位头像,不能进回退链
+    artist: (s.artists || s.ar || []).map((a) => a.name).join(' / '),
+    album: s.album?.name || s.al?.name || '',
     coverUrl: s.album?.picUrl || s.al?.picUrl || '',
-    durationMs: s.duration || 0,
+    durationMs: s.duration || s.dt || 0,
     vip: s.fee === 1 || s.fee === 4,
   };
 }
@@ -87,6 +118,54 @@ export async function songUrl(songId) {
     }
   }
   return { url: null, level: null, preview: false, previewEndSec: null }; // 版权受限 / 需 VIP
+}
+
+// 校验 Cookie 是否有效登录:/login/status 未登录时 profile 为空。
+// 返回 {valid, accountId, profile:{nickname, vipType}},供设置页保存前验证。
+export async function loginStatus(cookie) {
+  const data = await request('/login/status', { cookie });
+  const d = data?.data ?? data ?? {};
+  const profile = d.profile || null;
+  return {
+    valid: Boolean(profile),
+    accountId: d.account?.id ?? profile?.userId ?? null,
+    profile: profile ? { nickname: profile.nickname, vipType: profile.vipType } : null,
+  };
+}
+
+// 登录后获取自己的歌单(含收藏);未配置有效 Cookie 时报错
+export async function userPlaylists() {
+  const status = await loginStatus(await ensureCookie());
+  if (!status.valid || !status.accountId) {
+    throw new Error('未登录:请先在设置页保存有效的网易云 Cookie');
+  }
+  const data = await request('/user/playlist', {
+    uid: status.accountId,
+    limit: 50,
+    cookie: await ensureCookie(),
+  });
+  return (data?.playlist ?? [])
+    .filter((l) => l.trackCount > 0)
+    .map((l) => ({ id: String(l.id), name: l.name, trackCount: l.trackCount }));
+}
+
+// 歌单详情 + 曲目清单(公开歌单无需登录;导入后交给 DJ 学习)
+const PLAYLIST_MAX_TRACKS = 500;
+
+export async function playlistDetail(id) {
+  const cookie = await ensureCookie();
+  const [detail, tracks] = await Promise.all([
+    request('/playlist/detail', { id, cookie }),
+    request('/playlist/track/all', { id, limit: PLAYLIST_MAX_TRACKS, cookie }),
+  ]);
+  const pl = detail?.playlist ?? {};
+  const songs = tracks?.songs ?? [];
+  return {
+    id: String(id),
+    name: pl.name || `歌单 ${id}`,
+    trackCount: pl.trackCount ?? songs.length,
+    tracks: songs.map(toSong),
+  };
 }
 
 // 歌词

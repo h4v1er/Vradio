@@ -1,7 +1,8 @@
 <script setup>
 // Settings:外部能力配置状态 + 音频输出(DevicePicker)+ 配置指引。
 // 密钥本身只存在 server/.env(gitignore),此页只展示"已配置/未配置"。
-import { ref, onMounted } from 'vue';
+// 网易云 Cookie 例外:走 /api/netease/cookie 存入本机 state.db(验证通过才落库)。
+import { ref, computed, onMounted } from 'vue';
 import { http } from '../../lib/api/http.js';
 import { player } from '../../stores/player.js';
 import { chat } from '../../stores/chat.js';
@@ -16,6 +17,7 @@ onMounted(async () => {
   } catch (err) {
     error.value = err.message;
   }
+  refreshNetease();
 });
 
 const ROWS = [
@@ -23,6 +25,130 @@ const ROWS = [
   { key: 'weather', label: 'OpenWeather', desc: '天气注入编排', env: 'OPENWEATHER_API_KEY' },
   { key: 'feishu', label: '飞书日程', desc: '日程注入 + 日历 hook', env: 'FEISHU_APP_ID / FEISHU_APP_SECRET' },
 ];
+
+// ── 网易云账户与歌单 ─────────────────────────────────────────
+const cookieInput = ref('');
+const cookieBusy = ref(false);
+const cookieMsg = ref('');
+const cookieErr = ref(false);
+const cookieSource = ref('anonymous');
+const cookieConfigured = computed(() => cookieSource.value !== 'anonymous');
+
+const plInput = ref('');
+const plBusy = ref(false);
+const myLists = ref([]);
+const imported = ref([]);
+const importingId = ref(null);
+
+async function refreshNetease() {
+  try {
+    cookieSource.value = (await http.get('/netease/cookie')).source;
+  } catch {
+    // 后端不可用时保持默认,不阻塞设置页其余部分
+  }
+  try {
+    imported.value = (await http.get('/netease/playlists')).playlists;
+  } catch {
+    // 同上
+  }
+}
+
+async function saveCookie() {
+  cookieBusy.value = true;
+  cookieErr.value = false;
+  cookieMsg.value = '';
+  try {
+    const r = await http.post('/netease/cookie', { cookie: cookieInput.value });
+    cookieSource.value = 'prefs';
+    cookieInput.value = '';
+    const nick = r.profile?.nickname ? ` ${r.profile.nickname}` : '';
+    const vip = r.profile?.vipType ? ' · VIP 会员' : '';
+    cookieMsg.value = `验证通过:${nick}${vip} —— VIP 歌曲已可完整播放`;
+  } catch (err) {
+    cookieErr.value = true;
+    cookieMsg.value = err.message;
+  } finally {
+    cookieBusy.value = false;
+  }
+}
+
+async function clearCookie() {
+  cookieBusy.value = true;
+  cookieErr.value = false;
+  cookieMsg.value = '';
+  try {
+    const r = await http.post('/netease/cookie/clear');
+    cookieSource.value = r.source;
+    myLists.value = [];
+    cookieMsg.value = '已清除,回退为匿名访问';
+  } catch (err) {
+    cookieErr.value = true;
+    cookieMsg.value = err.message;
+  } finally {
+    cookieBusy.value = false;
+  }
+}
+
+async function loadMyPlaylists() {
+  plBusy.value = true;
+  cookieErr.value = false;
+  cookieMsg.value = '';
+  try {
+    myLists.value = (await http.get('/netease/my-playlists')).playlists;
+  } catch (err) {
+    cookieErr.value = true;
+    cookieMsg.value = err.message;
+  } finally {
+    plBusy.value = false;
+  }
+}
+
+// 链接或 ID 均可:playlist?id=xxx / playlist/xxx / 纯数字
+function extractPlaylistId(input) {
+  const s = String(input || '').trim();
+  const m = s.match(/playlist\?id=(\d+)|playlist\/(\d+)/);
+  if (m) return m[1] || m[2];
+  return /^\d+$/.test(s) ? s : null;
+}
+
+async function importPlaylist(id) {
+  plBusy.value = true;
+  cookieErr.value = false;
+  cookieMsg.value = '';
+  importingId.value = id;
+  try {
+    const r = await http.post('/netease/playlist/import', { id });
+    plInput.value = '';
+    cookieMsg.value = `已导入「${r.playlist.name}」(${r.playlist.trackCount} 首),DJ 接下来会参考它`;
+    await refreshNetease();
+  } catch (err) {
+    cookieErr.value = true;
+    cookieMsg.value = err.message;
+  } finally {
+    plBusy.value = false;
+    importingId.value = null;
+  }
+}
+
+function importByInput() {
+  const id = extractPlaylistId(plInput.value);
+  if (!id) {
+    cookieErr.value = true;
+    cookieMsg.value = '请输入歌单 ID,或包含 playlist?id=… 的链接';
+    return;
+  }
+  importPlaylist(id);
+}
+
+async function removePlaylist(id) {
+  try {
+    await http.post('/netease/playlist/remove', { id });
+    await refreshNetease();
+  } catch (err) {
+    cookieErr.value = true;
+    cookieMsg.value = err.message;
+  }
+}
 </script>
 
 <template>
@@ -114,6 +240,99 @@ const ROWS = [
 
     <div class="panel">
       <DevicePicker />
+    </div>
+
+    <div class="panel">
+      <h2 class="meta-label">netease / 网易云账户与歌单</h2>
+
+      <dl class="rows">
+        <div class="row">
+          <div class="info">
+            <dt>登录 Cookie</dt>
+            <dd class="meta-label">VIP 歌曲完整播放需要</dd>
+          </div>
+          <div class="state">
+            <span class="dot" :class="cookieConfigured ? 'on' : 'off'" aria-hidden="true"></span>
+            <span class="meta-label">
+              {{ cookieSource === 'env' ? '已配置(server/.env)' : cookieSource === 'prefs' ? '已配置(本页保存)' : '匿名访问' }}
+            </span>
+          </div>
+        </div>
+      </dl>
+
+      <form class="inline-form" @submit.prevent="saveCookie">
+        <input
+          v-model="cookieInput"
+          type="password"
+          placeholder="粘贴 MUSIC_U=… 或完整 Cookie"
+          aria-label="网易云 Cookie"
+          :disabled="cookieBusy"
+        />
+        <button type="submit" class="act" :disabled="cookieBusy || !cookieInput.trim()">
+          {{ cookieBusy ? '验证中…' : '保存并验证' }}
+        </button>
+        <button
+          type="button"
+          class="act ghost"
+          :disabled="!cookieConfigured || cookieBusy"
+          @click="clearCookie"
+        >
+          清除
+        </button>
+      </form>
+      <p class="hint meta-label">
+        登录 music.163.com → 开发者工具 → Application → Cookies → 复制 MUSIC_U=… 一段。
+        Cookie 仅保存在本机 state.db,验证通过才写入,不上传、不出网。
+      </p>
+
+      <form class="inline-form" @submit.prevent="importByInput">
+        <input
+          v-model="plInput"
+          type="text"
+          placeholder="歌单链接或 ID(公开歌单无需登录)"
+          aria-label="歌单链接或 ID"
+          :disabled="plBusy"
+        />
+        <button type="submit" class="act" :disabled="plBusy || !plInput.trim()">导入歌单</button>
+      </form>
+      <div class="row-actions">
+        <button
+          type="button"
+          class="act ghost"
+          :disabled="!cookieConfigured || plBusy"
+          @click="loadMyPlaylists"
+        >
+          {{ plBusy ? '获取中…' : '获取我的歌单' }}
+        </button>
+        <span v-if="!cookieConfigured" class="hint meta-label">配置 Cookie 后可一键拉取你自己的歌单</span>
+      </div>
+
+      <ul v-if="myLists.length" class="lists" aria-label="我的歌单">
+        <li v-for="l in myLists" :key="l.id" class="list-item">
+          <div class="info">
+            <dt>{{ l.name }}</dt>
+            <dd class="meta-label">{{ l.trackCount }} 首</dd>
+          </div>
+          <button class="act ghost" :disabled="plBusy" @click="importPlaylist(l.id)">
+            {{ importingId === l.id ? '导入中…' : '导入' }}
+          </button>
+        </li>
+      </ul>
+
+      <ul v-if="imported.length" class="lists" aria-label="已导入歌单">
+        <li v-for="l in imported" :key="l.id" class="list-item">
+          <div class="info">
+            <dt>{{ l.name }}</dt>
+            <dd class="meta-label">{{ l.trackCount }} 首 · 已交给 DJ 学习</dd>
+          </div>
+          <button class="act ghost danger" :disabled="plBusy" @click="removePlaylist(l.id)">移除</button>
+        </li>
+      </ul>
+      <p v-else class="empty meta-label">未导入歌单 —— 导入后 DJ 会学习你的真实品味,选歌优先从中取材</p>
+
+      <p v-if="cookieMsg" class="cookie-msg meta-label" :class="{ err: cookieErr }" role="status">
+        {{ cookieMsg }}
+      </p>
     </div>
 
     <div class="panel">
@@ -230,5 +449,101 @@ const ROWS = [
 }
 .error {
   color: var(--vr-danger);
+}
+
+/* ── 网易云账户与歌单 ── */
+.inline-form {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--vr-space-2);
+  align-items: center;
+}
+.inline-form:has(input[type='text']) {
+  grid-template-columns: 1fr auto;
+}
+.inline-form input {
+  background: var(--vr-bg);
+  border: 1px solid var(--vr-line);
+  border-radius: var(--vr-radius-s);
+  padding: var(--vr-space-2) var(--vr-space-3);
+  color: var(--vr-text);
+  font-family: var(--vr-font-mono);
+  font-size: var(--vr-text-caption);
+  min-height: 44px;
+  min-width: 0;
+  width: 100%;
+}
+.inline-form input:focus-visible {
+  outline: 2px solid var(--vr-on-air);
+  outline-offset: 1px;
+}
+.inline-form input:disabled {
+  opacity: 0.5;
+}
+.act {
+  font-family: var(--vr-font-mono);
+  font-size: var(--vr-text-caption);
+  padding: var(--vr-space-2) var(--vr-space-4);
+  border: 1px solid var(--vr-line-strong);
+  border-radius: var(--vr-radius-s);
+  min-height: 44px;
+  white-space: nowrap;
+}
+.act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.act.ghost {
+  border-color: var(--vr-line);
+  color: var(--vr-text-muted);
+}
+.act.danger {
+  border-color: transparent;
+  color: var(--vr-danger);
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vr-space-3);
+  flex-wrap: wrap;
+}
+.lists {
+  display: grid;
+  gap: var(--vr-space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--vr-space-3);
+  padding: var(--vr-space-2) var(--vr-space-3);
+  background: var(--vr-bg);
+  border: 1px solid var(--vr-line);
+  border-radius: var(--vr-radius-s);
+}
+.list-item .info {
+  min-width: 0;
+}
+.list-item dt {
+  font-size: var(--vr-text-body-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item dd {
+  color: var(--vr-text-muted);
+}
+.cookie-msg {
+  color: var(--vr-on-air);
+}
+.cookie-msg.err {
+  color: var(--vr-danger);
+}
+.empty {
+  color: var(--vr-text-muted);
 }
 </style>

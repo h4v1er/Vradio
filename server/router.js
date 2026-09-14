@@ -103,7 +103,7 @@ async function handlePointsong(keyword) {
         const probe = await netease.songUrl(s.songId);
         if (probe.preview) {
           s.preview = true;
-          trialNote = '——VIP 歌曲,未登录会员只能试听 30 秒(在 server/.env 配 NETEASE_COOKIE 可完整播放)。';
+          trialNote = '——VIP 歌曲,未登录会员只能试听 30 秒(在设置页配置网易云 Cookie 可完整播放)。';
         }
       } catch {
         // 探测失败不阻塞点歌
@@ -403,6 +403,89 @@ apiRouter.get('/config', (req, res) => {
     netease: process.env.NETEASE_BASE || 'http://localhost:3000',
     port: Number(process.env.VRADIO_PORT || 8080),
   });
+});
+
+// ── 网易云账户与歌单(设置页:配置 Cookie → VIP 完整播放;导入歌单 → DJ 学习) ──
+
+// GET /api/netease/cookie —— 配置状态(只回来源,不回 Cookie 值)
+apiRouter.get('/netease/cookie', (req, res) => {
+  const source = netease.cookieSource();
+  res.json({ configured: source !== 'anonymous', source });
+});
+
+// POST /api/netease/cookie —— 保存前先用 /login/status 验证,无效不落库
+apiRouter.post('/netease/cookie', async (req, res) => {
+  const cookie = String(req.body?.cookie || '').trim();
+  if (!cookie) return res.status(400).json({ error: 'Cookie 不能为空' });
+  try {
+    const status = await netease.loginStatus(cookie);
+    if (!status.valid) {
+      return res
+        .status(400)
+        .json({ error: 'Cookie 无效(未登录或已过期),请重新从 music.163.com 导出 MUSIC_U=… 一段' });
+    }
+    netease.setPrefCookie(cookie);
+    res.json({ ok: true, profile: status.profile });
+  } catch (err) {
+    res.status(502).json({ error: `验证失败:${err.message}` });
+  }
+});
+
+// POST /api/netease/cookie/clear —— 回退到匿名访问
+apiRouter.post('/netease/cookie/clear', (req, res) => {
+  netease.clearPrefCookie();
+  res.json({ ok: true, source: netease.cookieSource() });
+});
+
+// GET /api/netease/my-playlists —— 登录后自己的歌单(未配置有效 Cookie 报 400)
+apiRouter.get('/netease/my-playlists', async (req, res) => {
+  try {
+    res.json({ playlists: await netease.userPlaylists() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/netease/playlist/import {id} —— 拉取歌单曲目落库(公开歌单无需登录)
+apiRouter.post('/netease/playlist/import', async (req, res) => {
+  const id = String(req.body?.id || '').trim();
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: '歌单 ID 无效(应为一串数字)' });
+  try {
+    const pl = await netease.playlistDetail(id);
+    if (!pl.tracks.length) return res.status(400).json({ error: '歌单为空或无法访问' });
+    db.prepare(
+      `INSERT INTO netease_playlists (playlist_id, name, tracks) VALUES (?, ?, ?)
+       ON CONFLICT(playlist_id) DO UPDATE SET name = excluded.name, tracks = excluded.tracks,
+         created_at = datetime('now', 'localtime')`,
+    ).run(pl.id, pl.name, JSON.stringify(pl.tracks));
+    res.json({ ok: true, playlist: { id: pl.id, name: pl.name, trackCount: pl.tracks.length } });
+  } catch (err) {
+    res.status(502).json({ error: `导入失败:${err.message}` });
+  }
+});
+
+// GET /api/netease/playlists —— 已导入歌单列表(DJ 学习语料)
+apiRouter.get('/netease/playlists', (req, res) => {
+  const rows = db
+    .prepare('SELECT playlist_id, name, tracks, created_at FROM netease_playlists ORDER BY created_at DESC')
+    .all();
+  res.json({
+    playlists: rows.map((r) => {
+      let trackCount = 0;
+      try {
+        trackCount = JSON.parse(r.tracks).length;
+      } catch {
+        // 数据异常时按 0 计,不阻塞列表展示
+      }
+      return { id: r.playlist_id, name: r.name, trackCount, createdAt: r.created_at };
+    }),
+  });
+});
+
+// POST /api/netease/playlist/remove {id}
+apiRouter.post('/netease/playlist/remove', (req, res) => {
+  db.prepare('DELETE FROM netease_playlists WHERE playlist_id = ?').run(String(req.body?.id || ''));
+  res.json({ ok: true });
 });
 
 // GET /api/stream/:songId —— 音频流代理:
