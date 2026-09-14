@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'node:http';
 import { apiRouter } from './router.js';
+import { initWs } from './stream.js';
 
 const PORT = Number(process.env.VRADIO_PORT || 8080);
 
@@ -16,6 +17,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', apiRouter);
 
 const server = createServer(app);
+initWs(server);
 
 server.listen(PORT, () => {
   console.log(`[vradio] 服务已启动 http://localhost:${PORT}`);
