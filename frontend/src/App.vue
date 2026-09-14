@@ -1,7 +1,7 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import RadioShell from './RadioShell.vue';
 </script>
 
 <template>
-  <HelloWorld />
+  <RadioShell />
 </template>

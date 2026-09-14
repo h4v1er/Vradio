@@ -1,0 +1,365 @@
+<script setup>
+// App 壳:顶栏 + 桌面 12 栏电台控制台 + 移动单栏
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { player } from './stores/player.js';
+import { chat } from './stores/chat.js';
+import AmbientField from './components/ui/AmbientField.vue';
+import OnAirIndicator from './components/ui/OnAirIndicator.vue';
+import NowPlayingCard from './features/player/NowPlayingCard.vue';
+import DjMessage from './features/dj/DjMessage.vue';
+import MoodChips from './features/dj/MoodChips.vue';
+import RequestComposer from './features/dj/RequestComposer.vue';
+
+// 顶栏时钟(Doto 大数字)
+const now = ref(new Date());
+let timer = null;
+onMounted(() => {
+  timer = setInterval(() => (now.value = new Date()), 1000);
+});
+onBeforeUnmount(() => clearInterval(timer));
+
+const timeStr = computed(() =>
+  new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(now.value),
+);
+const dateStr = computed(() =>
+  new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(now.value),
+);
+
+// 顶栏环境摘要:天气 + 下一项日程(未配置显示占位)
+const weather = computed(() => {
+  const w = chat.env?.weather;
+  if (!w?.configured) return null;
+  return w.error ? null : `${w.city || ''} ${Math.round(w.temp)}° ${w.desc || ''}`;
+});
+const nextEvent = computed(() => {
+  const cal = chat.env?.calendar;
+  if (!cal?.configured) return null;
+  const nowMs = Date.now();
+  const next = (cal.events || []).find((e) => e.start > nowMs);
+  if (!next) return '今日无日程';
+  const t = new Date(next.start).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  });
+  return `${t} ${next.summary}`;
+});
+
+// 场景标题:优先当日计划串词,否则 DJ 最新一句
+const scene = computed(
+  () => chat.plan?.say || [...chat.messages].reverse().find((m) => m.role === 'assistant')?.say || '深夜电台 · 按你的品味自动编排',
+);
+
+// 右侧:最近播放
+const recentPlays = ref([]);
+const ttsState = computed(() => chat.tts?.state ?? null);
+</script>
+
+<template>
+  <AmbientField />
+  <div class="shell">
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="wordmark">VRADIO</span>
+        <OnAirIndicator :status="chat.ws" />
+      </div>
+      <div class="env meta-label">
+        <span v-if="weather">{{ weather }}</span>
+        <span v-else>天气 · 未配置</span>
+        <span class="sep" aria-hidden="true">/</span>
+        <span>{{ nextEvent || '日程 · 未配置' }}</span>
+      </div>
+      <span class="meta-label profile">profile →</span>
+    </header>
+
+    <main class="grid">
+      <!-- 主舞台 -->
+      <section class="stage">
+        <div class="scene">
+          <div class="clock">
+            <span class="time">{{ timeStr }}</span>
+            <span class="date meta-label">{{ dateStr }} · CST</span>
+          </div>
+          <p class="scene-title">{{ scene }}</p>
+        </div>
+
+        <NowPlayingCard />
+
+        <!-- DJ 对话区 -->
+        <section class="dj-area" aria-label="DJ 对话">
+          <div class="dj-head">
+            <h2 class="meta-label">dj 对话</h2>
+            <span class="meta-label" :class="{ thinking: player.dj.state === 'thinking' }">
+              {{ player.dj.state === 'thinking' ? 'thinking…' : 'idle' }}
+            </span>
+          </div>
+          <div class="messages" aria-live="polite">
+            <p v-if="!chat.messages.length" class="empty meta-label">
+              还没有对话 —— 问 DJ「现在适合听什么」,或者直接点歌
+            </p>
+            <DjMessage v-for="(m, i) in chat.messages" :key="i" :message="m" />
+          </div>
+          <MoodChips />
+          <RequestComposer />
+        </section>
+      </section>
+
+      <!-- 右栏:系统状态 / 队列 / 最近播放 -->
+      <aside class="side">
+        <section class="panel" aria-label="系统状态">
+          <h2 class="meta-label">system</h2>
+          <dl class="status">
+            <div><dt class="meta-label">dj</dt><dd>{{ player.dj.state }}</dd></div>
+            <div><dt class="meta-label">tts</dt><dd>{{ ttsState || 'off' }}</dd></div>
+            <div><dt class="meta-label">ws</dt><dd>{{ chat.ws }}</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel" aria-label="接下来播放">
+          <h2 class="meta-label">queue / 接下来播放</h2>
+          <p v-if="!player.queue.length" class="empty meta-label">队列为空 —— 点歌或让 DJ 编排</p>
+          <ol v-else class="queue-list">
+            <li
+              v-for="(s, i) in player.queue"
+              :key="`${s.songId ?? s.unresolved}-${i}`"
+              :class="{ current: i === player.index }"
+            >
+              <span class="meta-label">{{ String(i + 1).padStart(2, '0') }}</span>
+              <span class="q-title">{{ s.title || s.unresolved }}</span>
+              <span v-if="s.artist" class="q-artist">{{ s.artist }}</span>
+            </li>
+          </ol>
+        </section>
+
+        <section class="panel" aria-label="最近播放">
+          <h2 class="meta-label">recent / 最近播放</h2>
+          <p v-if="!recentPlays.length" class="empty meta-label">暂无记录</p>
+          <ul v-else class="recent-list">
+            <li v-for="p in recentPlays" :key="p.id">
+              <span class="q-title">{{ p.title }}</span>
+              <span class="q-artist">{{ p.artist }}</span>
+            </li>
+          </ul>
+        </section>
+      </aside>
+    </main>
+  </div>
+</template>
+
+<style scoped>
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--vr-space-5);
+  display: grid;
+  gap: var(--vr-space-5);
+}
+
+/* 顶栏 */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vr-space-4);
+  padding: var(--vr-space-4) 0;
+  border-bottom: 1px solid var(--vr-line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--vr-space-4);
+}
+.wordmark {
+  font-family: var(--vr-font-mono);
+  font-size: var(--vr-text-body);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+}
+.env {
+  display: flex;
+  gap: var(--vr-space-2);
+  align-items: center;
+}
+.sep {
+  opacity: 0.5;
+}
+.profile {
+  cursor: pointer;
+}
+
+/* 12 栏网格 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: var(--vr-space-5);
+}
+.stage {
+  grid-column: span 8;
+  display: grid;
+  gap: var(--vr-space-5);
+  align-content: start;
+}
+.side {
+  grid-column: span 4;
+  display: grid;
+  gap: var(--vr-space-4);
+  align-content: start;
+}
+
+/* 时间/场景 */
+.scene {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--vr-space-4);
+  padding-top: var(--vr-space-4);
+}
+.time {
+  font-family: var(--vr-font-display);
+  font-size: var(--vr-text-display-lg);
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.date {
+  display: block;
+  margin-top: var(--vr-space-2);
+}
+.scene-title {
+  max-width: 46ch;
+  text-align: right;
+  color: var(--vr-text-muted);
+  font-size: var(--vr-text-body-sm);
+}
+
+/* DJ 对话区 */
+.dj-area {
+  display: grid;
+  gap: var(--vr-space-4);
+  background: var(--vr-panel);
+  border: 1px solid var(--vr-line);
+  border-radius: var(--vr-radius-l);
+  padding: var(--vr-space-5);
+}
+.dj-head {
+  display: flex;
+  justify-content: space-between;
+}
+.dj-head .thinking {
+  color: var(--vr-ai);
+}
+.messages {
+  display: grid;
+  gap: var(--vr-space-3);
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: var(--vr-space-2);
+}
+.empty {
+  color: var(--vr-text-muted);
+}
+
+/* 右栏面板 */
+.panel {
+  background: var(--vr-panel);
+  border: 1px solid var(--vr-line);
+  border-radius: var(--vr-radius-m);
+  padding: var(--vr-space-4);
+  display: grid;
+  gap: var(--vr-space-3);
+}
+.status {
+  display: grid;
+  gap: var(--vr-space-2);
+}
+.status > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.status dd {
+  font-family: var(--vr-font-mono);
+  font-size: var(--vr-text-caption);
+  color: var(--vr-on-air);
+}
+.queue-list,
+.recent-list {
+  list-style: none;
+  display: grid;
+  gap: var(--vr-space-1);
+}
+.queue-list li,
+.recent-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--vr-space-2);
+  padding: var(--vr-space-2);
+  border-radius: var(--vr-radius-s);
+  font-size: var(--vr-text-body-sm);
+}
+.queue-list li.current {
+  background: var(--vr-on-air-soft);
+  outline: 1px solid var(--vr-on-air);
+}
+.q-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-artist {
+  color: var(--vr-text-muted);
+  font-size: var(--vr-text-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+/* 移动单栏 */
+@media (max-width: 1023px) {
+  .side {
+    display: none;
+  }
+  .stage {
+    grid-column: span 12;
+  }
+}
+@media (max-width: 767px) {
+  .shell {
+    padding: 0 var(--vr-space-4);
+    gap: var(--vr-space-4);
+  }
+  .env {
+    display: none;
+  }
+  .scene {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .scene-title {
+    text-align: left;
+  }
+  .time {
+    font-size: var(--vr-text-display-md);
+  }
+  .dj-area {
+    padding: var(--vr-space-4);
+  }
+  .messages {
+    max-height: none;
+  }
+}
+</style>
