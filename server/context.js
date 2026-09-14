@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db from './db.js';
+import * as weather from './adapters/weather.js';
+import * as feishu from './adapters/feishu.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_DIR = path.join(__dirname, 'user');
@@ -39,18 +41,63 @@ export function buildCorpus() {
     .join('\n\n');
 }
 
-// 片段 3:环境注入(weather / calendar / now;Phase 5 接入真实适配器)
-export function buildEnvironment() {
+// 片段 3:环境注入(weather / calendar / now)
+// 未配置 key 注入「未配置」标记、调用失败注入「暂不可用」,DJ 串词自然跳过
+export async function buildEnvironment() {
   const formatter = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
     dateStyle: 'full',
     timeStyle: 'short',
   });
-  return [
-    `现在时间:${formatter.format(new Date())}(Asia/Shanghai)`,
-    '天气:未配置(OPENWEATHER_API_KEY 未设置)',
-    '日程:未配置(FEISHU_APP_ID 未设置)',
-  ].join('\n');
+  const lines = [`现在时间:${formatter.format(new Date())}(Asia/Shanghai)`];
+
+  try {
+    const w = await weather.now();
+    lines.push(
+      w.configured
+        ? `天气:${w.city} ${w.desc},${w.temp}°C(体感 ${w.feels}°C,湿度 ${w.humidity}%)`
+        : '天气:未配置(OPENWEATHER_API_KEY 未设置)',
+    );
+  } catch (err) {
+    lines.push(`天气:暂不可用(${err.message})`);
+  }
+
+  try {
+    const cal = await feishu.todayEvents();
+    lines.push(
+      cal.configured
+        ? `今日日程:${cal.events.length
+            ? cal.events
+                .map(
+                  (e) =>
+                    `- ${new Date(e.start).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' })} ${e.summary}`,
+                )
+                .join(';')
+            : '(无安排)'}`
+        : '日程:未配置(FEISHU_APP_ID 未设置)',
+    );
+  } catch (err) {
+    lines.push(`日程:暂不可用(${err.message})`);
+  }
+
+  return lines.join('\n');
+}
+
+// 结构化环境数据(GET /api/env 与 RadioContext 面板用)
+export async function getEnvSnapshot() {
+  let w = { configured: false };
+  let cal = { configured: false, events: [] };
+  try {
+    w = await weather.now();
+  } catch (err) {
+    w = { configured: true, error: err.message };
+  }
+  try {
+    cal = await feishu.todayEvents();
+  } catch (err) {
+    cal = { configured: true, error: err.message, events: [] };
+  }
+  return { weather: w, calendar: cal };
 }
 
 // 片段 4:已检索记忆(state.db 最近对话与播放)
@@ -74,12 +121,12 @@ export function buildMemory({ messages = 12, plays = 8 } = {}) {
 }
 
 // 六类片段组装:taste + routines + environment + history → system prompt
-export function buildPrompt({ message, toolResults = null, trace = null }) {
+export async function buildPrompt({ message, toolResults = null, trace = null }) {
   const memory = buildMemory();
   return [
     `<system>\n${buildSystemPrompt()}\n</system>`,
     `<用户品味语料>\n${buildCorpus()}\n</用户品味语料>`,
-    `<环境注入>\n${buildEnvironment()}\n</环境注入>`,
+    `<环境注入>\n${await buildEnvironment()}\n</环境注入>`,
     `<记忆>\n最近对话:\n${memory.chat}\n最近播放:\n${memory.played}\n</记忆>`,
     `<本次请求>\n听众说:${message}${toolResults ? `\n工具结果(网易云搜索):\n${JSON.stringify(toolResults, null, 2)}` : ''}\n</本次请求>`,
     `<执行轨迹>\n${trace || '调度:无'}\n</执行轨迹>`,

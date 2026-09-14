@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { ask, parseClaudeOutput, getLastRaw } from './claude.js';
-import { buildPrompt } from './context.js';
+import { buildPrompt, getEnvSnapshot } from './context.js';
 import * as netease from './adapters/netease.js';
 import * as player from './player.js';
 import * as tts from './tts.js';
@@ -114,7 +114,7 @@ async function handleClaude(message) {
   player.setDjState('thinking');
   broadcast('dj', { state: 'thinking' });
 
-  const prompt = buildPrompt({ message });
+  const prompt = await buildPrompt({ message });
 
   let output;
   try {
@@ -229,6 +229,11 @@ apiRouter.get('/plays/today', (req, res) => {
     .prepare("SELECT * FROM plays WHERE date(played_at) = date('now', 'localtime') ORDER BY id DESC")
     .all();
   res.json({ plays: rows });
+});
+
+// GET /api/env —— 天气与今日日程(顶栏 / RadioContext 面板用)
+apiRouter.get('/env', async (req, res) => {
+  res.json(await getEnvSnapshot());
 });
 
 // POST /api/queue/remove —— 从队列移除(QueuePanel 用)
