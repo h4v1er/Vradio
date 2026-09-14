@@ -8,6 +8,7 @@ import { buildPrompt, getEnvSnapshot } from './context.js';
 import * as netease from './adapters/netease.js';
 import * as player from './player.js';
 import * as tts from './tts.js';
+import { todayPlan, generateDailyPlan } from './scheduler.js';
 import { broadcast } from './stream.js';
 import db from './db.js';
 
@@ -229,6 +230,20 @@ apiRouter.get('/plays/today', (req, res) => {
     .prepare("SELECT * FROM plays WHERE date(played_at) = date('now', 'localtime') ORDER BY id DESC")
     .all();
   res.json({ plays: rows });
+});
+
+// GET /api/plan/today —— 当日播放计划(scheduler 生成,可能为 null)
+apiRouter.get('/plan/today', (req, res) => {
+  res.json({ plan: todayPlan() });
+});
+
+// POST /api/plan/generate —— 手动触发计划生成(调试与演示用)
+apiRouter.post('/plan/generate', async (req, res) => {
+  try {
+    res.json(await generateDailyPlan({ reason: '手动触发' }));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // GET /api/env —— 天气与今日日程(顶栏 / RadioContext 面板用)

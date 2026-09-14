@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { apiRouter } from './router.js';
 import { ttsRouter } from './tts.js';
 import { initWs } from './stream.js';
+import { startScheduler } from './scheduler.js';
 
 const PORT = Number(process.env.VRADIO_PORT || 8080);
 
@@ -23,4 +24,5 @@ initWs(server);
 
 server.listen(PORT, () => {
   console.log(`[vradio] 服务已启动 http://localhost:${PORT}`);
+  if (!process.env.VRADIO_NO_SCHEDULER) startScheduler();
 });
