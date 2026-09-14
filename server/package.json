@@ -1,0 +1,19 @@
+{
+  "name": "vradio-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vradio 本地服务:意图分流、Claude 决策、播放编排、调度与 TTS",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env index.js",
+    "dev": "node --watch --env-file-if-exists=.env index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "node-cron": "^4.2.1",
+    "ws": "^8.18.3"
+  }
+}

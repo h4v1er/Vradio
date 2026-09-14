@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+frontend/dist/
+dev-dist/
+
+# 运行时状态(不随仓库同步)
+server/state.db
+server/state.db-wal
+server/state.db-shm
+server/cache/
+
+# 环境变量与密钥
+.env
+.env.local
+*.local
+
+# 系统
+.DS_Store
