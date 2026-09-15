@@ -50,11 +50,14 @@ bash scripts/dev.sh
 cp server/.env.example server/.env   # 填入 FISH_API_KEY / OPENWEATHER_API_KEY / FEISHU_APP_ID …
 ```
 
-也可在设置页「capabilities / 外部能力」直接粘贴保存——保存前会先验证(Fish/飞书无效不落库,OpenWeather 新 key 未激活会如实提示),密钥只存本机 `state.db`,环境变量优先。
+也可在设置页「capabilities / 外部能力」直接粘贴保存——保存前会先验证(Fish/飞书无效不落库,OpenWeather 新 key 未激活会如实提示)。
+
+**凭据存储说明(如实)**:本项目是**本地单用户应用**,密钥保存在本机 `state.db`(已 gitignore 的 SQLite)中,为**本地明文存储**——威胁模型仅覆盖「密钥不进仓库、不上传、接口不回显」,不覆盖「能读取你本机文件的进程」。这不是密钥管理系统,请勿宣传为「安全密钥治理」。风险与改进方向(系统钥匙串/凭据库)见 [docs/FAILURE-MODES.md](docs/FAILURE-MODES.md)。
 
 网易云 Cookie 与歌单(可选,推荐):
 
-- **Cookie**:设置页 →「netease / 网易云账户与歌单」粘贴 `MUSIC_U=…`(登录 music.163.com 后从浏览器开发者工具导出)。保存前会先验证登录态,有效才写入本机 `state.db`(不上传)。配置后 VIP/会员歌曲完整播放;也可放 `server/.env` 的 `NETEASE_COOKIE`(环境变量优先)。
+- **Cookie**:设置页 →「netease / 网易云账户与歌单」粘贴 `MUSIC_U=…`(登录 music.163.com 后从浏览器开发者工具导出)。保存前会先验证登录态,有效才写入本机 `state.db`(已 gitignore,不上传;与密钥一样为本地明文,风险见上)。配置后 VIP/会员歌曲按**你自己账号的权益**播放(会员可完整播放);也可放 `server/.env` 的 `NETEASE_COOKIE`(环境变量优先)。
+- **不做绕过**:本项目不提供任何绕过第三方音乐服务版权/会员限制的能力。未登录时 VIP 歌曲仅 30 秒试听(平台策略,播放器与串词如实标注)。
 - **导入歌单**:同一面板粘贴歌单链接或 ID(公开歌单无需登录),曲目清单落库后注入 DJ 提示词——DJ 会把它当作你最可信的品味信号,选歌优先从中取材;配置 Cookie 后还可一键拉取「我的歌单」。
 
 ## API 契约
@@ -70,19 +73,21 @@ cp server/.env.example server/.env   # 填入 FISH_API_KEY / OPENWEATHER_API_KEY
 | `GET /api/user/files` · `POST /api/user/files` | Profile 页在线编辑品味语料(白名单校验) |
 | `GET /api/env` · `GET /api/config` · `POST /api/config/secrets` · `POST /api/config/secrets/clear` | 天气/日程快照;外部能力配置状态与设置页保存密钥(验证后落 state.db,不暴露密钥值) |
 | `GET /api/upnp/devices` · `POST /api/upnp/select·cast·control` | SSDP 发现 + 投放/控制家庭音响 |
-| `GET /api/stream/:songId` | 音频流代理(音质回退、Range 206、Referer 伪装) |
+| `GET /api/stream/:songId` | 音频流代理(音质逐级回退、Range 206、上游 CDN 要求的 Referer/UA 头) |
 | `GET/POST /api/netease/cookie` · `POST /api/netease/cookie/clear` | 网易云 Cookie 状态/保存(先验证再落库)/清除 |
 | `GET /api/netease/my-playlists` | 登录后自己的歌单(需有效 Cookie) |
 | `POST /api/netease/playlist/import` · `GET /api/netease/playlists` · `POST /api/netease/playlist/remove` | 导入歌单(公开歌单免登录)/已导入列表/移除,DJ 提示词注入 |
 | `WS /stream` | 推送 `chat` / `now-playing` / `dj` / `tts` / `plan` / `upnp` 事件 |
 | `GET /tts/[hash].mp3` | TTS 缓存音频(Fish Audio,文本哈希去重) |
 
-## 降级矩阵(实测演练)
+## 降级矩阵
+
+以下行为均有自动化测试或评测用例背书(单测 `server/test/`,评测 `server/evals/`,逐项证据见 [docs/FAILURE-MODES.md](docs/FAILURE-MODES.md))。
 
 | 故障 | 表现 |
 |---|---|
 | Claude 子进程失败/超时 | 点歌类按关键词直搜网易云;其余返回"电台信号不太好",`degraded: true` |
-| 网易云容器宕机 | 点歌/DJ 编排均降级为信号提示,播放状态机不受影响,恢复后自愈 |
+| 网易云容器宕机 | 点歌/DJ 编排均降级为信号提示,播放状态机不受影响;容器恢复后下次请求自动恢复,无需重启 |
 | VIP/会员歌曲未登录 | 仅 30 秒试听,串词与播放器如实标注;设置页配置网易云 Cookie(或 `server/.env` 配 `NETEASE_COOKIE`)后完整播放 |
 | 网易云 Cookie 失效 | 保存时 `/login/status` 验证拦截,无效不落库;清除后回退匿名访问 |
 | Fish Audio 未配置 | `tts: null`,串词纯文字展示 |
