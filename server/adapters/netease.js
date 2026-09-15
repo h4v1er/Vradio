@@ -1,6 +1,6 @@
 // 网易云适配器:NeteaseCloudMusicApi 的调用、超时与错误封装
 // search / song_url(音质回退)/ lyric / recommend / 登录态与歌单
-import db from '../db.js';
+import { getPref, setPref, delPref } from '../prefs.js';
 
 const BASE = process.env.NETEASE_BASE || 'http://localhost:3000';
 const TIMEOUT_MS = 5000;
@@ -13,21 +13,15 @@ const TIMEOUT_MS = 5000;
 let anonCookie = null;
 
 function getPrefCookie() {
-  try {
-    return db.prepare('SELECT value FROM prefs WHERE key = ?').get('netease_cookie')?.value || null;
-  } catch {
-    return null;
-  }
+  return getPref('netease_cookie');
 }
 
 export function setPrefCookie(cookie) {
-  db.prepare(
-    'INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-  ).run('netease_cookie', cookie);
+  setPref('netease_cookie', cookie);
 }
 
 export function clearPrefCookie() {
-  db.prepare('DELETE FROM prefs WHERE key = ?').run('netease_cookie');
+  delPref('netease_cookie');
 }
 
 // 当前 cookie 来源:env / prefs / anonymous(设置页状态展示用,不回 cookie 值)

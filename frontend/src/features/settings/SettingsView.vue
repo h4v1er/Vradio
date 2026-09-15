@@ -2,7 +2,7 @@
 // Settings:外部能力配置状态 + 音频输出(DevicePicker)+ 配置指引。
 // 密钥本身只存在 server/.env(gitignore),此页只展示"已配置/未配置"。
 // 网易云 Cookie 例外:走 /api/netease/cookie 存入本机 state.db(验证通过才落库)。
-import { ref, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { http } from '../../lib/api/http.js';
 import { player } from '../../stores/player.js';
 import { chat } from '../../stores/chat.js';
@@ -149,6 +149,70 @@ async function removePlaylist(id) {
     cookieMsg.value = err.message;
   }
 }
+
+// ── 外部服务密钥(Fish/OpenWeather/飞书,保存前验证,env 优先) ──
+const secrets = reactive({
+  fishApiKey: '',
+  openweatherApiKey: '',
+  openweatherCity: '',
+  feishuAppId: '',
+  feishuAppSecret: '',
+});
+const secBusy = reactive({ tts: false, weather: false, feishu: false });
+const secMsg = reactive({ tts: '', weather: '', feishu: '' });
+const secErr = reactive({ tts: false, weather: false, feishu: false });
+
+const SEC_FIELDS = {
+  tts: ['fishApiKey'],
+  weather: ['openweatherApiKey', 'openweatherCity'],
+  feishu: ['feishuAppId', 'feishuAppSecret'],
+};
+
+function secPayload(service) {
+  const body = {};
+  for (const f of SEC_FIELDS[service]) body[f] = secrets[f];
+  return body;
+}
+
+async function saveSecrets(service) {
+  secBusy[service] = true;
+  secErr[service] = false;
+  secMsg[service] = '';
+  try {
+    const r = await http.post('/config/secrets', secPayload(service));
+    config.value = r.config;
+    for (const f of SEC_FIELDS[service]) secrets[f] = '';
+    secMsg[service] = r.warnings?.length ? `已保存。${r.warnings[0]}` : '已保存,已验证有效';
+  } catch (err) {
+    secErr[service] = true;
+    secMsg[service] = err.message;
+  } finally {
+    secBusy[service] = false;
+  }
+}
+
+async function clearSecrets(service) {
+  secBusy[service] = true;
+  secErr[service] = false;
+  secMsg[service] = '';
+  try {
+    const r = await http.post('/config/secrets/clear', { service });
+    config.value = r.config;
+    secMsg[service] = '已清除';
+  } catch (err) {
+    secErr[service] = true;
+    secMsg[service] = err.message;
+  } finally {
+    secBusy[service] = false;
+  }
+}
+
+function sourceLabel(key) {
+  const s = config.value?.sources?.[key];
+  if (s === 'env') return '已配置(server/.env)';
+  if (s === 'prefs') return '已配置(本页保存)';
+  return '未配置';
+}
 </script>
 
 <template>
@@ -226,15 +290,123 @@ async function removePlaylist(id) {
               :class="config ? (config[r.key] ? 'on' : 'off') : 'unknown'"
               aria-hidden="true"
             ></span>
-            <span class="meta-label">
-              {{ config ? (config[r.key] ? '已配置' : '未配置') : '…' }}
-            </span>
+            <span class="meta-label">{{ config ? sourceLabel(r.key) : '…' }}</span>
           </div>
           <code class="env">{{ r.env }}</code>
         </div>
       </dl>
+
+      <div class="sec-block">
+        <h3 class="sec-title">Fish Audio TTS</h3>
+        <form class="sec-form single" @submit.prevent="saveSecrets('tts')">
+          <input
+            v-model="secrets.fishApiKey"
+            type="password"
+            placeholder="粘贴 API Key"
+            aria-label="Fish Audio API Key"
+            :disabled="secBusy.tts"
+          />
+          <div class="actions">
+            <button type="submit" class="act" :disabled="secBusy.tts || !secrets.fishApiKey.trim()">
+              {{ secBusy.tts ? '验证中…' : '保存' }}
+            </button>
+            <button
+              type="button"
+              class="act ghost"
+              :disabled="!config?.tts || secBusy.tts"
+              @click="clearSecrets('tts')"
+            >
+              清除
+            </button>
+          </div>
+        </form>
+        <p v-if="secMsg.tts" class="cookie-msg meta-label" :class="{ err: secErr.tts }" role="status">
+          {{ secMsg.tts }}
+        </p>
+      </div>
+
+      <div class="sec-block">
+        <h3 class="sec-title">OpenWeather</h3>
+        <form class="sec-form" @submit.prevent="saveSecrets('weather')">
+          <input
+            v-model="secrets.openweatherApiKey"
+            type="password"
+            placeholder="粘贴 API Key"
+            aria-label="OpenWeather API Key"
+            :disabled="secBusy.weather"
+          />
+          <input
+            v-model="secrets.openweatherCity"
+            type="text"
+            placeholder="城市(默认 Shanghai)"
+            aria-label="天气城市"
+            :disabled="secBusy.weather"
+          />
+          <div class="actions">
+            <button
+              type="submit"
+              class="act"
+              :disabled="secBusy.weather || (!secrets.openweatherApiKey.trim() && !secrets.openweatherCity.trim())"
+            >
+              {{ secBusy.weather ? '验证中…' : '保存' }}
+            </button>
+            <button
+              type="button"
+              class="act ghost"
+              :disabled="!config?.weather || secBusy.weather"
+              @click="clearSecrets('weather')"
+            >
+              清除
+            </button>
+          </div>
+        </form>
+        <p v-if="secMsg.weather" class="cookie-msg meta-label" :class="{ err: secErr.weather }" role="status">
+          {{ secMsg.weather }}
+        </p>
+      </div>
+
+      <div class="sec-block">
+        <h3 class="sec-title">飞书日程</h3>
+        <form class="sec-form" @submit.prevent="saveSecrets('feishu')">
+          <input
+            v-model="secrets.feishuAppId"
+            type="password"
+            placeholder="App ID(cli_…)"
+            aria-label="飞书 App ID"
+            :disabled="secBusy.feishu"
+          />
+          <input
+            v-model="secrets.feishuAppSecret"
+            type="password"
+            placeholder="App Secret"
+            aria-label="飞书 App Secret"
+            :disabled="secBusy.feishu"
+          />
+          <div class="actions">
+            <button
+              type="submit"
+              class="act"
+              :disabled="secBusy.feishu || !secrets.feishuAppId.trim() || !secrets.feishuAppSecret.trim()"
+            >
+              {{ secBusy.feishu ? '验证中…' : '保存' }}
+            </button>
+            <button
+              type="button"
+              class="act ghost"
+              :disabled="!config?.feishu || secBusy.feishu"
+              @click="clearSecrets('feishu')"
+            >
+              清除
+            </button>
+          </div>
+        </form>
+        <p v-if="secMsg.feishu" class="cookie-msg meta-label" :class="{ err: secErr.feishu }" role="status">
+          {{ secMsg.feishu }}
+        </p>
+      </div>
+
       <p class="hint meta-label">
-        配置方法:复制 server/.env.example 为 server/.env,填入对应 key 后重启后端。
+        密钥仅保存在本机 state.db,验证通过才写入;也可在 server/.env 配置(环境变量优先)。
       </p>
     </div>
 
@@ -462,7 +634,8 @@ async function removePlaylist(id) {
 .inline-form:has(input[type='text']) {
   grid-template-columns: 1fr auto;
 }
-.inline-form input {
+.inline-form input,
+.sec-form input {
   background: var(--vr-bg);
   border: 1px solid var(--vr-line);
   border-radius: var(--vr-radius-s);
@@ -474,11 +647,13 @@ async function removePlaylist(id) {
   min-width: 0;
   width: 100%;
 }
-.inline-form input:focus-visible {
+.inline-form input:focus-visible,
+.sec-form input:focus-visible {
   outline: 2px solid var(--vr-on-air);
   outline-offset: 1px;
 }
-.inline-form input:disabled {
+.inline-form input:disabled,
+.sec-form input:disabled {
   opacity: 0.5;
 }
 .act {
@@ -546,5 +721,34 @@ async function removePlaylist(id) {
 }
 .empty {
   color: var(--vr-text-muted);
+}
+
+/* ── 外部服务密钥输入 ── */
+.sec-block {
+  display: grid;
+  gap: var(--vr-space-2);
+  padding-top: var(--vr-space-3);
+  border-top: 1px solid var(--vr-line);
+}
+.sec-title {
+  font-family: var(--vr-font-mono);
+  font-size: var(--vr-text-caption);
+  font-weight: 500;
+  color: var(--vr-text-muted);
+  letter-spacing: 0.08em;
+}
+.sec-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--vr-space-2);
+}
+.sec-form.single {
+  grid-template-columns: 1fr auto;
+}
+.sec-form .actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--vr-space-2);
+  flex-wrap: wrap;
 }
 </style>

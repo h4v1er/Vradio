@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { effective } from './prefs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,7 +15,19 @@ const VOICE_ID = process.env.FISH_VOICE_ID || '03397b4c4bbf4d02bd63a5a55baaa2ed'
 const TIMEOUT_MS = 20000;
 
 export function isConfigured() {
-  return Boolean(process.env.FISH_API_KEY);
+  return Boolean(effective('FISH_API_KEY', 'fish_api_key'));
+}
+
+// 验证 API Key:/user 需鉴权(无效 key 返回 401),不消耗合成积分(设置页保存前调用)
+export async function testKey(key) {
+  const res = await fetch('https://api.fish.audio/user', {
+    headers: { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Fish Audio 返回 ${res.status}${detail ? `:${detail.slice(0, 120)}` : ''}`);
+  }
 }
 
 export function ttsHash(text) {
@@ -31,7 +44,7 @@ export function cached(hash) {
 
 // 合成一段串词,写入缓存,返回哈希;失败抛错由调用方降级
 export async function synthesize(text) {
-  const key = process.env.FISH_API_KEY;
+  const key = effective('FISH_API_KEY', 'fish_api_key');
   if (!key) throw new Error('FISH_API_KEY 未配置');
 
   const controller = new AbortController();

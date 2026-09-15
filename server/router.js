@@ -6,11 +6,14 @@ import { Readable } from 'node:stream';
 import { ask, parseClaudeOutput, getLastRaw } from './claude.js';
 import { buildPrompt, getEnvSnapshot } from './context.js';
 import * as netease from './adapters/netease.js';
+import * as weather from './adapters/weather.js';
+import * as feishu from './adapters/feishu.js';
 import * as upnp from './adapters/upnp.js';
 import * as player from './player.js';
 import * as tts from './tts.js';
 import { todayPlan, generateDailyPlan } from './scheduler.js';
 import { broadcast } from './stream.js';
+import { setPref, delPref, sourceOf } from './prefs.js';
 import db from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -395,14 +398,95 @@ apiRouter.post('/user/files', (req, res) => {
 });
 
 // GET /api/config —— 外部能力配置状态(Settings 页用,不暴露密钥值)
-apiRouter.get('/config', (req, res) => {
-  res.json({
+// sources:env / prefs / none —— 密钥来源(server/.env 优先于设置页保存)
+function currentConfig() {
+  return {
     tts: tts.isConfigured(),
-    weather: Boolean(process.env.OPENWEATHER_API_KEY),
-    feishu: Boolean(process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET),
+    weather: weather.isConfigured(),
+    feishu: feishu.isConfigured(),
     netease: process.env.NETEASE_BASE || 'http://localhost:3000',
     port: Number(process.env.VRADIO_PORT || 8080),
-  });
+    sources: {
+      tts: sourceOf('FISH_API_KEY', 'fish_api_key') || 'none',
+      weather: sourceOf('OPENWEATHER_API_KEY', 'openweather_api_key') || 'none',
+      feishu: sourceOf('FEISHU_APP_ID', 'feishu_app_id') || 'none',
+    },
+  };
+}
+
+apiRouter.get('/config', (req, res) => {
+  res.json(currentConfig());
+});
+
+// ── 外部服务密钥(设置页直接保存;验证通过才落库,env 优先) ──
+
+// POST /api/config/secrets {fishApiKey?, openweatherApiKey?, openweatherCity?, feishuAppId?, feishuAppSecret?}
+// Fish/飞书硬验证(无效不落库);OpenWeather 软验证(401 多为新 key 未激活,保存但如实提示)
+apiRouter.post('/config/secrets', async (req, res) => {
+  const body = req.body ?? {};
+  const saved = [];
+  const warnings = [];
+
+  const fish = String(body.fishApiKey || '').trim();
+  if (fish) {
+    try {
+      await tts.testKey(fish);
+      setPref('fish_api_key', fish);
+      saved.push('tts');
+    } catch (err) {
+      return res.status(400).json({ error: `Fish Audio Key 无效:${err.message}` });
+    }
+  }
+
+  const city = String(body.openweatherCity || '').trim();
+  const owm = String(body.openweatherApiKey || '').trim();
+  if (owm || city) {
+    if (owm) {
+      const test = await weather.testKey(owm, city || 'Shanghai');
+      setPref('openweather_api_key', owm);
+      if (!test.activated) {
+        const why = test.networkError ? '网络异常' : `HTTP ${test.status}`;
+        warnings.push(`OpenWeather ${why}:新 key 需 10 分钟~2 小时激活,已保存,稍后生效`);
+      }
+    }
+    if (city) setPref('openweather_city', city);
+    saved.push('weather');
+  }
+
+  const feishuId = String(body.feishuAppId || '').trim();
+  const feishuSecret = String(body.feishuAppSecret || '').trim();
+  if (feishuId || feishuSecret) {
+    if (!feishuId || !feishuSecret) {
+      return res.status(400).json({ error: '飞书需要同时填写 App ID 与 App Secret' });
+    }
+    try {
+      await feishu.testCredentials(feishuId, feishuSecret);
+      setPref('feishu_app_id', feishuId);
+      setPref('feishu_app_secret', feishuSecret);
+      saved.push('feishu');
+    } catch (err) {
+      return res.status(400).json({ error: `飞书凭据无效:${err.message}` });
+    }
+  }
+
+  if (!saved.length) return res.status(400).json({ error: '没有要保存的内容' });
+  res.json({ ok: true, saved, warnings, config: currentConfig() });
+});
+
+// POST /api/config/secrets/clear {service: tts|weather|feishu} —— 清除设置页保存的值,回退 env
+apiRouter.post('/config/secrets/clear', (req, res) => {
+  const service = String(req.body?.service || '');
+  if (service === 'tts') delPref('fish_api_key');
+  else if (service === 'weather') {
+    delPref('openweather_api_key');
+    delPref('openweather_city');
+  } else if (service === 'feishu') {
+    delPref('feishu_app_id');
+    delPref('feishu_app_secret');
+  } else {
+    return res.status(400).json({ error: '未知服务' });
+  }
+  res.json({ ok: true, config: currentConfig() });
 });
 
 // ── 网易云账户与歌单(设置页:配置 Cookie → VIP 完整播放;导入歌单 → DJ 学习) ──
