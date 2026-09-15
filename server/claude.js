@@ -57,7 +57,7 @@ function runClaude(prompt, timeoutMs) {
   });
 }
 
-// ── 输出解析:容错代码围栏 / 前后杂文 / CLI 结果包裹 ──────────
+// ── 输出解析:容错提取(围栏/包裹/杂文)→ 严格契约校验 ────────
 
 // 记录最近一次子进程原始输出,解析失败时由调用方落盘调试
 let lastRaw = '';
@@ -131,20 +131,71 @@ function unwrap(obj) {
     }
   }
 
-  if (typeof obj.say === 'string' || Array.isArray(obj.play)) {
-    return normalize(obj);
+  // 出现任一契约字段即视为候选对象,进入严格校验(缺失/错型/超限 → 抛错)
+  if ('say' in obj || 'play' in obj || 'reason' in obj || 'segue' in obj) {
+    return validateContract(obj);
   }
   return null;
 }
 
-// 契约校验:缺字段给默认值,play[] 只保留字符串
-function normalize(obj) {
+// ── 输出契约严格校验 ────────────────────────────────────────
+// 契约 {say: string, play: string[], reason: string, segue: string}。
+// 容错只发生在「提取 JSON」环节(围栏/包裹/杂文);提取到对象之后必须严格:
+// 缺失字段 / 类型错误 / 超限一律抛错,由调用方走降级路径,绝不静默补全为成功结果。
+export const OUTPUT_LIMITS = {
+  SAY_MAX: 2000,
+  REASON_MAX: 500,
+  SEGUE_MAX: 500,
+  PLAY_MAX_ITEMS: 8,
+  PLAY_ITEM_MAX: 200,
+};
+
+export function validateContract(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    throw new Error('输出契约错误:顶层必须是 JSON 对象');
+  }
+
+  const say = obj.say;
+  if (typeof say !== 'string') {
+    throw new Error(`输出契约错误:say 缺失或不是字符串(收到 ${say === null ? 'null' : typeof say})`);
+  }
+  if (!say.trim()) throw new Error('输出契约错误:say 不能为空字符串');
+  if (say.length > OUTPUT_LIMITS.SAY_MAX) {
+    throw new Error(`输出契约错误:say 超过 ${OUTPUT_LIMITS.SAY_MAX} 字符上限`);
+  }
+
+  if (!Array.isArray(obj.play)) {
+    throw new Error('输出契约错误:play 缺失或不是数组');
+  }
+  if (obj.play.length > OUTPUT_LIMITS.PLAY_MAX_ITEMS) {
+    throw new Error(
+      `输出契约错误:play 最多 ${OUTPUT_LIMITS.PLAY_MAX_ITEMS} 首,收到 ${obj.play.length} 首`,
+    );
+  }
+  obj.play.forEach((p, i) => {
+    if (typeof p !== 'string' || !p.trim()) {
+      throw new Error(`输出契约错误:play 第 ${i + 1} 项必须为非空字符串`);
+    }
+    if (p.length > OUTPUT_LIMITS.PLAY_ITEM_MAX) {
+      throw new Error(`输出契约错误:play 第 ${i + 1} 项超过 ${OUTPUT_LIMITS.PLAY_ITEM_MAX} 字符上限`);
+    }
+  });
+
+  for (const field of ['reason', 'segue']) {
+    const value = obj[field];
+    if (typeof value !== 'string') {
+      throw new Error(`输出契约错误:${field} 缺失或不是字符串`);
+    }
+    const max = field === 'reason' ? OUTPUT_LIMITS.REASON_MAX : OUTPUT_LIMITS.SEGUE_MAX;
+    if (value.length > max) {
+      throw new Error(`输出契约错误:${field} 超过 ${max} 字符上限`);
+    }
+  }
+
   return {
-    say: typeof obj.say === 'string' ? obj.say.trim() : '',
-    play: Array.isArray(obj.play)
-      ? obj.play.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
-      : [],
-    reason: typeof obj.reason === 'string' ? obj.reason.trim() : '',
-    segue: typeof obj.segue === 'string' ? obj.segue.trim() : '',
+    say: say.trim(),
+    play: obj.play.map((p) => p.trim()),
+    reason: obj.reason.trim(),
+    segue: obj.segue.trim(),
   };
 }
