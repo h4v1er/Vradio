@@ -5,6 +5,8 @@
 
 深墨蓝的夜间电波控制台,薄荷绿 `#47e7b1` 是唯一的"信号灯",象牙白的实体播放控制台是唯一的亮色大块——设计语言取自 Nothing 的克制与点阵气质。
 
+[![CI](https://github.com/h4v1er/Vradio/actions/workflows/ci.yml/badge.svg)](https://github.com/h4v1er/Vradio/actions/workflows/ci.yml)
+
 ## 四层架构
 
 ```
@@ -43,6 +45,22 @@ bash scripts/dev.sh
 ```
 
 浏览器打开 http://localhost:5173,说"早上好,今天适合听什么?"——DJ 会结合天气、日程与你的品味编排串词与队列。
+
+### 测试与评测
+
+```bash
+# 后端自动化测试(node:test,全部 mock/桩件,无需任何密钥、网络或容器)
+cd server && npm test
+
+# 评测集(fixture 模式默认:不产生真实模型调用与费用;24 条用例覆盖
+# 正常场景/点歌/提示注入/格式错误/外部服务故障)
+cd server && npm run eval
+
+# 前端构建验证
+cd frontend && npm run build
+```
+
+CI(GitHub Actions,`.github/workflows/ci.yml`)在每次 push / PR 时执行上述 server 测试+评测与 frontend 构建,不需要任何真实 API Key。
 
 外部服务密钥(可选,全部可降级):
 
@@ -112,14 +130,36 @@ cp server/.env.example server/.env   # 填入 FISH_API_KEY / OPENWEATHER_API_KEY
 ```
 server/      本地服务:router.js · context.js · claude.js · scheduler.js · tts.js · player.js
              adapters/(netease · feishu · weather · upnp) · user/ 品味语料 · prompts/ DJ 人设
+             test/ 自动化测试(node:test,全部 mock) · evals/ 评测集(jsonl 用例 + 运行器)
 frontend/    Vue3 PWA:features/(player · queue · dj · radio-context · profile · settings)
              stores/ · lib/api · styles/ tokens.css · scripts/gen-icons.js
 scripts/     dev.sh 一键启动
+docs/        FAILURE-MODES.md 故障模式与降级证据 · assets/ 实机截图
+.github/     workflows/ci.yml(push/PR 跑 server 测试+评测、frontend 构建,无需密钥)
 ```
 
 ## 截图
 
-> 占位:浏览器打开 http://localhost:5173 后补充桌面(1440px)与移动(390px)截图。
+> 实机运行截图(本机 dev 环境,非设计稿)。复现:`bash scripts/dev.sh` → 打开 http://localhost:5173 → 说"播放 晴天" → 按 1440px / 390px 视口截图。
+
+**桌面 1440px**(主界面 / 队列抽屉展开)
+
+<img src="docs/assets/desktop-1440.png" width="640" alt="Vradio 桌面主界面 1440px" />
+<img src="docs/assets/desktop-1440-queue.png" width="640" alt="Vradio 桌面队列抽屉 1440px" />
+
+**移动 390px**(主界面 / 队列页)
+
+<img src="docs/assets/mobile-390.png" width="200" alt="Vradio 移动主界面 390px" />
+<img src="docs/assets/mobile-390-queue.png" width="200" alt="Vradio 移动队列 390px" />
+
+## 已知限制
+
+- **单用户本地应用**:无账号体系与多用户隔离;若未来做多用户/部署版,需重做鉴权,密钥治理升级为系统钥匙串(评估见 [docs/FAILURE-MODES.md](docs/FAILURE-MODES.md))。
+- **依赖 Claude Code CLI 本机登录**:大脑是 `claude -p` 子进程,运行机器需已登录 Claude Code(Max 订阅);测试与 CI 不调用真实模型。
+- **凭据本地明文存储**:Fish/天气/飞书密钥与网易云 Cookie 存于本机 SQLite(已 gitignore)。威胁模型仅覆盖「不进仓库、不上传、接口不回显」,不覆盖能读取本机文件的进程。
+- **版权受限歌曲**:部分歌曲无播放直链或未登录仅 30 秒试听,播放器与串词如实标注,不做任何绕过(平台策略,非本项目限制)。
+- **部分失败路径仅手动验证**:UPnP、音频流代理、TTS 合成失败、Cookie 失效依赖真实设备/服务,无自动化测试,验证方法见 [docs/FAILURE-MODES.md](docs/FAILURE-MODES.md)。
+- **响应式断点**:桌面(12 栏)与移动(<768px 单栏)两档;中间宽度未逐档验证。
 
 ## License
 

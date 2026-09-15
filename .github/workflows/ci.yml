@@ -1,0 +1,41 @@
+# Vradio CI:push 与 pull request 时执行前后端安装、构建与测试。
+# 不需要任何真实 API Key:后端测试与评测全部使用 mock/桩件,前端仅做静态构建。
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    name: server(测试 + 评测)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run eval
+
+  frontend:
+    name: frontend(构建)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
