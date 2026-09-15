@@ -1,22 +1,37 @@
 // Feishu/Lark 适配器:tenant_access_token + 主日历今日事件
+import { effective } from '../prefs.js';
+
 const BASE = 'https://open.feishu.cn';
 const TOKEN_TTL_MS = 100 * 60 * 1000; // token 有效期约 2 小时,提前轮换
 
 let tokenCache = { at: 0, token: null };
 
 export function isConfigured() {
-  return Boolean(process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET);
+  return Boolean(
+    effective('FEISHU_APP_ID', 'feishu_app_id') && effective('FEISHU_APP_SECRET', 'feishu_app_secret'),
+  );
+}
+
+// 验证凭据:能换到 tenant_access_token 即有效(设置页保存前调用)
+export async function testCredentials(appId, appSecret) {
+  const res = await fetch(`${BASE}/open-apis/auth/v3/tenant_access_token/internal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+    signal: AbortSignal.timeout(5000),
+  });
+  const j = await res.json();
+  if (j.code !== 0) throw new Error(j.msg || `code ${j.code}`);
 }
 
 async function tenantToken() {
   if (tokenCache.token && Date.now() - tokenCache.at < TOKEN_TTL_MS) return tokenCache.token;
+  const appId = effective('FEISHU_APP_ID', 'feishu_app_id');
+  const appSecret = effective('FEISHU_APP_SECRET', 'feishu_app_secret');
   const res = await fetch(`${BASE}/open-apis/auth/v3/tenant_access_token/internal`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      app_id: process.env.FEISHU_APP_ID,
-      app_secret: process.env.FEISHU_APP_SECRET,
-    }),
+    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
     signal: AbortSignal.timeout(5000),
   });
   const j = await res.json();

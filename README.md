@@ -50,6 +50,8 @@ bash scripts/dev.sh
 cp server/.env.example server/.env   # 填入 FISH_API_KEY / OPENWEATHER_API_KEY / FEISHU_APP_ID …
 ```
 
+也可在设置页「capabilities / 外部能力」直接粘贴保存——保存前会先验证(Fish/飞书无效不落库,OpenWeather 新 key 未激活会如实提示),密钥只存本机 `state.db`,环境变量优先。
+
 网易云 Cookie 与歌单(可选,推荐):
 
 - **Cookie**:设置页 →「netease / 网易云账户与歌单」粘贴 `MUSIC_U=…`(登录 music.163.com 后从浏览器开发者工具导出)。保存前会先验证登录态,有效才写入本机 `state.db`(不上传)。配置后 VIP/会员歌曲完整播放;也可放 `server/.env` 的 `NETEASE_COOKIE`(环境变量优先)。
@@ -66,7 +68,7 @@ cp server/.env.example server/.env   # 填入 FISH_API_KEY / OPENWEATHER_API_KEY
 | `GET /api/plan/today` · `POST /api/plan/generate` | 当日播放计划(scheduler 生成/手动触发) |
 | `POST /api/queue/play` · `remove` · `move` · `clear` | 队列操作(点击/移除/拖拽排序) |
 | `GET /api/user/files` · `POST /api/user/files` | Profile 页在线编辑品味语料(白名单校验) |
-| `GET /api/env` · `GET /api/config` | 天气/日程快照;外部能力配置状态(不暴露密钥) |
+| `GET /api/env` · `GET /api/config` · `POST /api/config/secrets` · `POST /api/config/secrets/clear` | 天气/日程快照;外部能力配置状态与设置页保存密钥(验证后落 state.db,不暴露密钥值) |
 | `GET /api/upnp/devices` · `POST /api/upnp/select·cast·control` | SSDP 发现 + 投放/控制家庭音响 |
 | `GET /api/stream/:songId` | 音频流代理(音质回退、Range 206、Referer 伪装) |
 | `GET/POST /api/netease/cookie` · `POST /api/netease/cookie/clear` | 网易云 Cookie 状态/保存(先验证再落库)/清除 |
